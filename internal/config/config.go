@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -19,13 +20,14 @@ type Config struct {
 }
 
 func Default() Config {
+	rootSocketPath := defaultRootSocketPath()
 	cfg := Config{
 		WebAddr:                "127.0.0.1:17878",
 		ApprovalTimeoutSeconds: 600,
 		TokenHashHex:           MustHashToken("123456"),
 		DatabasePath:           "./websudo.db",
-		RootSocketPath:         "/run/websudo-rootd.sock",
-		RootAllowedUID:         os.Getuid(),
+		RootSocketPath:         rootSocketPath,
+		RootAllowedUID:         defaultRootAllowedUID(rootSocketPath),
 	}
 	if value, ok := envString("WEBSUDO_WEB_ADDR"); ok {
 		cfg.WebAddr = value
@@ -41,11 +43,33 @@ func Default() Config {
 	}
 	if value, ok := envString("WEBSUDO_ROOT_SOCKET_PATH"); ok {
 		cfg.RootSocketPath = value
+		cfg.RootAllowedUID = defaultRootAllowedUID(value)
 	}
 	if value, ok := envInt("WEBSUDO_ROOT_ALLOWED_UID"); ok {
 		cfg.RootAllowedUID = value
 	}
 	return cfg
+}
+
+func defaultRootSocketPath() string {
+	if runtimeDir, ok := envString("XDG_RUNTIME_DIR"); ok {
+		return filepath.Join(runtimeDir, "websudo-rootd.sock")
+	}
+	return "/run/websudo-rootd.sock"
+}
+
+func defaultRootAllowedUID(rootSocketPath string) int {
+	parts := strings.Split(filepath.Clean(rootSocketPath), string(filepath.Separator))
+	for index := 0; index+1 < len(parts); index++ {
+		if parts[index] != "user" {
+			continue
+		}
+		uid, err := strconv.Atoi(parts[index+1])
+		if err == nil {
+			return uid
+		}
+	}
+	return os.Getuid()
 }
 
 func envString(key string) (string, bool) {

@@ -47,3 +47,29 @@ func TestDefaultsHonorEnvironmentOverrides(t *testing.T) {
 		t.Fatalf("approval timeout = %d, want %d", cfg.ApprovalTimeoutSeconds, 42)
 	}
 }
+
+func TestDefaultsUseUserRuntimeSocketWhenAvailable(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join("/run/user", "1234"))
+	t.Setenv("WEBSUDO_ROOT_SOCKET_PATH", "")
+	t.Setenv("WEBSUDO_ROOT_ALLOWED_UID", "")
+
+	cfg := Default()
+
+	if cfg.RootSocketPath != "/run/user/1234/websudo-rootd.sock" {
+		t.Fatalf("root socket path = %q, want %q", cfg.RootSocketPath, "/run/user/1234/websudo-rootd.sock")
+	}
+	if cfg.RootAllowedUID != 1234 {
+		t.Fatalf("root allowed uid = %d, want %d", cfg.RootAllowedUID, 1234)
+	}
+}
+
+func TestDefaultsDeriveAllowedUIDFromConfiguredRuntimeSocket(t *testing.T) {
+	t.Setenv("WEBSUDO_ROOT_SOCKET_PATH", "/run/user/2345/websudo-rootd.sock")
+	t.Setenv("WEBSUDO_ROOT_ALLOWED_UID", "")
+
+	cfg := Default()
+
+	if cfg.RootAllowedUID != 2345 {
+		t.Fatalf("root allowed uid = %d, want %d", cfg.RootAllowedUID, 2345)
+	}
+}
