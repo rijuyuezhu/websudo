@@ -261,6 +261,45 @@ func TestApproveHandlerExecutesRequestAndStoresResult(t *testing.T) {
 	}
 }
 
+func TestGetRequestExpiresStalePendingRequest(t *testing.T) {
+	store := newMemoryStore([]model.Request{
+		model.NewRequest(
+			"req-expire",
+			time.Now().Add(-2*time.Minute).UTC(),
+			model.Requester{Username: "rijuyuezhu"},
+			model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
+		),
+	})
+	srv := NewServer(Dependencies{
+		Config:    config.Config{ApprovalTimeoutSeconds: 60, TokenHashHex: config.MustHashToken("123456")},
+		Store:     store,
+		Templates: testTemplates(t),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/requests/req-expire", nil)
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if payload["status"] != string(model.StatusExpired) {
+		t.Fatalf("payload status = %#v, want %q", payload["status"], model.StatusExpired)
+	}
+	stored, err := store.GetRequest("req-expire")
+	if err != nil {
+		t.Fatalf("GetRequest() error = %v", err)
+	}
+	if stored.Status() != model.StatusExpired {
+		t.Fatalf("stored status = %q, want %q", stored.Status(), model.StatusExpired)
+	}
+}
+
 func testTemplates(t *testing.T) *template.Template {
 	t.Helper()
 
@@ -300,6 +339,23 @@ func (s *memoryStore) ListPendingRequests() ([]model.Request, error) {
 		}
 	}
 	return pending, nil
+}
+
+func (s *memoryStore) ExpirePendingRequests(before time.Time) (int, error) {
+	expired := 0
+	for _, id := range s.ordered {
+		req := s.requests[id]
+		if req.Status() != model.StatusPending || req.CreatedAt().After(before) {
+			continue
+		}
+		next, err := req.Transition(model.StatusExpired)
+		if err != nil {
+			return 0, err
+		}
+		s.requests[id] = next
+		expired++
+	}
+	return expired, nil
 }
 
 func (s *memoryStore) ListRecentRequests() ([]model.Request, error) {

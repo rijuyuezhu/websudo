@@ -139,6 +139,37 @@ func TestSQLiteStorePersistsCompletedRequestResult(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreExpiresPendingRequestsBeforeDeadline(t *testing.T) {
+	s, cleanup := newTestStore(t)
+	defer cleanup()
+
+	stale := model.NewRequest(
+		"req-expire-sqlite",
+		time.Date(2026, 4, 12, 6, 0, 0, 0, time.UTC),
+		model.Requester{},
+		model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
+	)
+	if err := s.CreateRequest(context.Background(), stale); err != nil {
+		t.Fatalf("CreateRequest() error = %v", err)
+	}
+
+	expired, err := s.ExpirePendingRequests(context.Background(), time.Date(2026, 4, 12, 6, 1, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("ExpirePendingRequests() error = %v", err)
+	}
+	if expired != 1 {
+		t.Fatalf("expired = %d, want %d", expired, 1)
+	}
+
+	got, err := s.GetRequest(context.Background(), stale.ID())
+	if err != nil {
+		t.Fatalf("GetRequest() error = %v", err)
+	}
+	if got.Status() != model.StatusExpired {
+		t.Fatalf("status = %q, want %q", got.Status(), model.StatusExpired)
+	}
+}
+
 func newTestStore(t *testing.T) (*SQLiteStore, func()) {
 	t.Helper()
 

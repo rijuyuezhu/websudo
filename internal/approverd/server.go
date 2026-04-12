@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
+	"time"
 
 	"websudo/internal/config"
 	"websudo/internal/model"
@@ -20,6 +21,7 @@ var templateFS embed.FS
 
 type Store interface {
 	CreateRequest(req model.Request) error
+	ExpirePendingRequests(before time.Time) (int, error)
 	ListPendingRequests() ([]model.Request, error)
 	ListRecentRequests() ([]model.Request, error)
 	GetRequest(id string) (model.Request, error)
@@ -61,6 +63,10 @@ func NewSQLiteStore(store *storepkg.SQLiteStore) *SQLiteStore {
 
 func (s *SQLiteStore) ListPendingRequests() ([]model.Request, error) {
 	return s.store.ListRequestsByStatus(context.Background(), model.StatusPending)
+}
+
+func (s *SQLiteStore) ExpirePendingRequests(before time.Time) (int, error) {
+	return s.store.ExpirePendingRequests(context.Background(), before)
 }
 
 func (s *SQLiteStore) ListRecentRequests() ([]model.Request, error) {
@@ -174,6 +180,10 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "store not configured", http.StatusInternalServerError)
 		return
 	}
+	if err := s.expirePendingRequests(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	pending, err := s.store.ListPendingRequests()
 	if err != nil {
@@ -205,6 +215,10 @@ func (s *Server) handleRequestPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if err := s.expirePendingRequests(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	req, err := s.store.GetRequest(id)
 	if err != nil {
@@ -219,6 +233,10 @@ func (s *Server) handleRequestPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRequestAction(w http.ResponseWriter, r *http.Request) {
+	if err := s.expirePendingRequests(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if r.Method == http.MethodGet {
 		id, ok := requestIDFromPath(r.URL.Path, "/api/requests/")
 		if !ok {
@@ -339,4 +357,12 @@ func approvalToken(r *http.Request) (string, error) {
 
 func isJSONRequest(r *http.Request) bool {
 	return strings.HasPrefix(r.Header.Get("Content-Type"), "application/json")
+}
+
+func (s *Server) expirePendingRequests() error {
+	if s.config.ApprovalTimeoutSeconds <= 0 || s.store == nil {
+		return nil
+	}
+	_, err := s.store.ExpirePendingRequests(time.Now().Add(-time.Duration(s.config.ApprovalTimeoutSeconds) * time.Second).UTC())
+	return err
 }

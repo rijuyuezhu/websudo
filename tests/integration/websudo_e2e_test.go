@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -84,11 +85,11 @@ func startTestStack(t *testing.T) (testStack, func()) {
 		t.Fatalf("Listen() error = %v", err)
 	}
 	go func() {
-		_ = rootd.Server{}.Serve(listener)
+		_ = rootd.Server{AllowedUID: os.Getuid()}.Serve(listener)
 	}()
 
 	srv := approverd.NewServer(approverd.Dependencies{
-		Config: config.Config{TokenHashHex: config.MustHashToken("123456"), RootSocketPath: socketPath},
+		Config: config.Config{TokenHashHex: config.MustHashToken("123456"), RootSocketPath: socketPath, RootAllowedUID: os.Getuid()},
 		Store:  approverd.NewSQLiteStore(sqliteStore),
 	})
 	httpServer := httptest.NewServer(srv.Routes())

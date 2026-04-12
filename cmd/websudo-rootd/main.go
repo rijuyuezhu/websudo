@@ -8,7 +8,8 @@ import (
 )
 
 func main() {
-	if err := rootd.ListenAndServe(config.Default().RootSocketPath); err != nil {
+	cfg := config.Default()
+	if err := rootd.ListenAndServe(cfg.RootSocketPath, cfg.RootAllowedUID); err != nil {
 		log.Fatal(err)
 	}
 }

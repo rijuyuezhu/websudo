@@ -95,6 +95,7 @@ func (Executor) Run(ctx context.Context, req ExecRequest) (ExecResult, error) {
 type Server struct {
 	Executor          Executor
 	ConnectionTimeout time.Duration
+	AllowedUID        int
 }
 
 func (s Server) Serve(listener net.Listener) error {
@@ -114,6 +115,12 @@ func (s Server) Serve(listener net.Listener) error {
 
 		go func() {
 			defer conn.Close()
+
+			allowedUID := normalizeAllowedUID(s.AllowedUID)
+			if err := validatePeerUID(conn, allowedUID); err != nil {
+				_ = writeResponse(conn, timeout, ExecResponse{Error: err.Error()})
+				return
+			}
 
 			if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
 				return
@@ -153,14 +160,14 @@ func writeResponse(conn net.Conn, timeout time.Duration, response ExecResponse) 
 	return json.NewEncoder(conn).Encode(response)
 }
 
-func ListenAndServe(socketPath string) error {
-	listener, err := listenUnixSocket(socketPath)
+func ListenAndServe(socketPath string, allowedUID int) error {
+	listener, err := listenUnixSocket(socketPath, normalizeAllowedUID(allowedUID))
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
 
-	return Server{Executor: Executor{}}.Serve(listener)
+	return Server{Executor: Executor{}, AllowedUID: normalizeAllowedUID(allowedUID)}.Serve(listener)
 }
 
 func Execute(ctx context.Context, socketPath string, req ExecRequest) (ExecResponse, error) {
@@ -182,7 +189,7 @@ func Execute(ctx context.Context, socketPath string, req ExecRequest) (ExecRespo
 	return response, nil
 }
 
-func listenUnixSocket(socketPath string) (net.Listener, error) {
+func listenUnixSocket(socketPath string, allowedUID int) (net.Listener, error) {
 	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -195,6 +202,57 @@ func listenUnixSocket(socketPath string) (net.Listener, error) {
 		_ = listener.Close()
 		return nil, err
 	}
+	if err := os.Chown(socketPath, allowedUID, -1); err != nil {
+		_ = listener.Close()
+		return nil, err
+	}
 
 	return listener, nil
+}
+
+func normalizeAllowedUID(uid int) int {
+	if uid == 0 {
+		return os.Getuid()
+	}
+	return uid
+}
+
+func validatePeerUID(conn net.Conn, allowedUID int) error {
+	peerUID, err := peerUIDFromConn(conn)
+	if err != nil {
+		return err
+	}
+	if peerUID != allowedUID {
+		return fmt.Errorf("peer uid %d is not allowed", peerUID)
+	}
+	return nil
+}
+
+func peerUIDFromConn(conn net.Conn) (int, error) {
+	unixConn, ok := conn.(*net.UnixConn)
+	if !ok {
+		return 0, errors.New("peer credential checks require a unix socket")
+	}
+	rawConn, err := unixConn.SyscallConn()
+	if err != nil {
+		return 0, err
+	}
+	var (
+		credErr error
+		peerUID int
+	)
+	if err := rawConn.Control(func(fd uintptr) {
+		cred, err := syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
+		if err != nil {
+			credErr = err
+			return
+		}
+		peerUID = int(cred.Uid)
+	}); err != nil {
+		return 0, err
+	}
+	if credErr != nil {
+		return 0, credErr
+	}
+	return peerUID, nil
 }

@@ -61,3 +61,29 @@ func TestRunReturnsErrorWhenCommandMissing(t *testing.T) {
 		t.Fatal("Run() error = nil, want missing command error")
 	}
 }
+
+func TestRunMapsSignalToShellExitStatus(t *testing.T) {
+	client := &fakeApprovalClient{
+		result: clientpkg.Request{
+			ID:        "req-signal",
+			CreatedAt: time.Date(2026, 4, 12, 6, 0, 0, 0, time.UTC),
+			Command:   model.Command{ResolvedPath: "/usr/bin/sleep", Argv: []string{"/usr/bin/sleep", "30"}, Cwd: "/tmp"},
+			Status:    model.StatusFailed,
+			Result:    &clientpkg.Result{ExitCode: -1, Signal: 9, Stderr: "killed"},
+		},
+	}
+
+	exitCode, stdout, stderr, err := Run(context.Background(), client, []string{"/usr/bin/sleep", "30"}, "/tmp")
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if exitCode != 137 {
+		t.Fatalf("exitCode = %d, want %d", exitCode, 137)
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
+	}
+	if stderr != "killed" {
+		t.Fatalf("stderr = %q, want %q", stderr, "killed")
+	}
+}

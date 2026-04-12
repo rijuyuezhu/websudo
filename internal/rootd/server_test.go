@@ -97,7 +97,7 @@ func TestServerRunsRequestOverUnixSocket(t *testing.T) {
 func TestListenUnixSocketRestrictsPermissionsToOwner(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "websudo-rootd.sock")
 
-	listener, err := listenUnixSocket(socketPath)
+	listener, err := listenUnixSocket(socketPath, os.Getuid())
 	if err != nil {
 		t.Fatalf("listenUnixSocket() error = %v", err)
 	}
@@ -109,6 +109,45 @@ func TestListenUnixSocketRestrictsPermissionsToOwner(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Fatalf("socket mode = %o, want 600", got)
+	}
+}
+
+func TestServerRejectsUnexpectedPeerUID(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "websudo-rootd.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	defer listener.Close()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- Server{AllowedUID: os.Getuid() + 1}.Serve(listener)
+	}()
+
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatalf("Dial() error = %v", err)
+	}
+	defer conn.Close()
+
+	if err := json.NewEncoder(conn).Encode(ExecRequest{}); err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+
+	var response ExecResponse
+	if err := json.NewDecoder(conn).Decode(&response); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if !strings.Contains(response.Error, "peer uid") {
+		t.Fatalf("error = %q, want peer uid rejection", response.Error)
+	}
+
+	if err := listener.Close(); err != nil {
+		t.Fatalf("listener Close() error = %v", err)
+	}
+	if err := <-serverErr; err != nil {
+		t.Fatalf("Serve() error = %v", err)
 	}
 }
 

@@ -54,5 +54,8 @@ func Run(ctx context.Context, approvalClient ApprovalClient, argv []string, cwd 
 		return 1, "", "", fmt.Errorf("request %s", finalReq.Status)
 	}
 	result := finalReq.Result
+	if result.Signal != 0 {
+		return 128 + result.Signal, result.Stdout, result.Stderr, nil
+	}
 	return result.ExitCode, result.Stdout, result.Stderr, nil
 }

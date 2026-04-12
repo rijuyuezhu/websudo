@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestDefaultsUseLocalhostAndTenMinuteTimeout(t *testing.T) {
 	cfg := Default()
@@ -23,5 +27,23 @@ func TestVerifyTokenMatchesHash(t *testing.T) {
 	}
 	if VerifyToken(hash, "654321") {
 		t.Fatalf("expected wrong token to fail")
+	}
+}
+
+func TestDefaultsHonorEnvironmentOverrides(t *testing.T) {
+	t.Setenv("WEBSUDO_ROOT_SOCKET_PATH", filepath.Join(t.TempDir(), "websudo-rootd.sock"))
+	t.Setenv("WEBSUDO_ROOT_ALLOWED_UID", "1234")
+	t.Setenv("WEBSUDO_APPROVAL_TIMEOUT_SECONDS", "42")
+
+	cfg := Default()
+
+	if cfg.RootSocketPath != os.Getenv("WEBSUDO_ROOT_SOCKET_PATH") {
+		t.Fatalf("root socket path = %q, want %q", cfg.RootSocketPath, os.Getenv("WEBSUDO_ROOT_SOCKET_PATH"))
+	}
+	if cfg.RootAllowedUID != 1234 {
+		t.Fatalf("root allowed uid = %d, want %d", cfg.RootAllowedUID, 1234)
+	}
+	if cfg.ApprovalTimeoutSeconds != 42 {
+		t.Fatalf("approval timeout = %d, want %d", cfg.ApprovalTimeoutSeconds, 42)
 	}
 }

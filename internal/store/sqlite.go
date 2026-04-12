@@ -153,6 +153,22 @@ func (s *SQLiteStore) CompleteRequest(ctx context.Context, id string, result mod
 	return completed, nil
 }
 
+func (s *SQLiteStore) ExpirePendingRequests(ctx context.Context, before time.Time) (int, error) {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE requests
+		SET status = ?
+		WHERE status = ? AND created_at <= ?
+	`, string(model.StatusExpired), string(model.StatusPending), before.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(affected), nil
+}
+
 func (s *SQLiteStore) UpdateRequestStatus(ctx context.Context, id string, from, to model.Status) (model.Request, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
