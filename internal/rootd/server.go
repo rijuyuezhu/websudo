@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"syscall"
 	"time"
 )
+
+const defaultConnectionTimeout = 5 * time.Second
 
 type ExecRequest struct {
 	ResolvedPath string        `json:"resolvedPath"`
@@ -75,11 +78,16 @@ func (Executor) Run(ctx context.Context, req ExecRequest) (ExecResult, error) {
 }
 
 type Server struct {
-	Executor Executor
+	Executor          Executor
+	ConnectionTimeout time.Duration
 }
 
 func (s Server) Serve(listener net.Listener) error {
 	executor := s.Executor
+	timeout := s.ConnectionTimeout
+	if timeout <= 0 {
+		timeout = defaultConnectionTimeout
+	}
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -92,9 +100,20 @@ func (s Server) Serve(listener net.Listener) error {
 		go func() {
 			defer conn.Close()
 
+			if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+				return
+			}
+
 			var req ExecRequest
 			if err := json.NewDecoder(conn).Decode(&req); err != nil {
-				_ = json.NewEncoder(conn).Encode(ExecResponse{Error: err.Error()})
+				responseErr := err.Error()
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					responseErr = fmt.Sprintf("request decode timeout after %s", timeout)
+				}
+				_ = json.NewEncoder(conn).Encode(ExecResponse{Error: responseErr})
+				return
+			}
+			if err := conn.SetDeadline(time.Time{}); err != nil {
 				return
 			}
 
@@ -104,21 +123,37 @@ func (s Server) Serve(listener net.Listener) error {
 				response.Error = err.Error()
 			}
 
+			if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+				return
+			}
 			_ = json.NewEncoder(conn).Encode(response)
 		}()
 	}
 }
 
 func ListenAndServe(socketPath string) error {
-	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-
-	listener, err := net.Listen("unix", socketPath)
+	listener, err := listenUnixSocket(socketPath)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
 
 	return Server{Executor: Executor{}}.Serve(listener)
+}
+
+func listenUnixSocket(socketPath string) (net.Listener, error) {
+	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(socketPath, 0o600); err != nil {
+		_ = listener.Close()
+		return nil, err
+	}
+
+	return listener, nil
 }
