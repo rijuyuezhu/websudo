@@ -10,11 +10,12 @@ import (
 	"strconv"
 	"time"
 
+	clientpkg "websudo/internal/client"
 	"websudo/internal/model"
 )
 
 type ApprovalClient interface {
-	CreateAndWait(context.Context, model.Request) (model.Request, error)
+	CreateAndWait(context.Context, model.Request) (clientpkg.Request, error)
 }
 
 func Run(ctx context.Context, approvalClient ApprovalClient, argv []string, cwd string) (int, string, string, error) {
@@ -49,9 +50,9 @@ func Run(ctx context.Context, approvalClient ApprovalClient, argv []string, cwd 
 	if err != nil {
 		return 0, "", "", err
 	}
-	if finalReq.Result() == nil {
-		return 1, "", "", fmt.Errorf("request %s", finalReq.Status())
+	if finalReq.Result == nil {
+		return 1, "", "", fmt.Errorf("request %s", finalReq.Status)
 	}
-	result := finalReq.Result()
+	result := finalReq.Result
 	return result.ExitCode, result.Stdout, result.Stderr, nil
 }

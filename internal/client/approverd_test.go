@@ -43,22 +43,22 @@ func TestCreateAndWaitPostsRequestThenPollsUntilFinished(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAndWait() error = %v", err)
 	}
-	if finalReq.Status() != model.StatusSucceeded {
-		t.Fatalf("status = %q, want %q", finalReq.Status(), model.StatusSucceeded)
+	if finalReq.Status != model.StatusSucceeded {
+		t.Fatalf("status = %q, want %q", finalReq.Status, model.StatusSucceeded)
 	}
-	if finalReq.Result() == nil || finalReq.Result().Stdout != "ok" {
-		t.Fatalf("result = %#v, want buffered stdout", finalReq.Result())
+	if finalReq.Result == nil || finalReq.Result.Stdout != "ok" {
+		t.Fatalf("result = %#v, want buffered stdout", finalReq.Result)
 	}
 	if callCount < 2 {
 		t.Fatalf("poll count = %d, want at least 2", callCount)
 	}
-	if finalReq.ID() != "req-1" {
-		t.Fatalf("id = %q, want %q", finalReq.ID(), "req-1")
+	if finalReq.ID != "req-1" {
+		t.Fatalf("id = %q, want %q", finalReq.ID, "req-1")
 	}
-	if got := finalReq.Command().ResolvedPath; got != "/usr/bin/true" {
+	if got := finalReq.Command.ResolvedPath; got != "/usr/bin/true" {
 		t.Fatalf("resolved path = %q, want %q", got, "/usr/bin/true")
 	}
-	if createdAt := finalReq.CreatedAt(); !createdAt.Equal(time.Date(2026, 4, 12, 6, 0, 0, 0, time.UTC)) {
+	if createdAt := finalReq.CreatedAt; !createdAt.Equal(time.Date(2026, 4, 12, 6, 0, 0, 0, time.UTC)) {
 		t.Fatalf("createdAt = %v, want fixed timestamp", createdAt)
 	}
 }

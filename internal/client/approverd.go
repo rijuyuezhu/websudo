@@ -12,6 +12,22 @@ import (
 	"websudo/internal/model"
 )
 
+type Result struct {
+	ExitCode int    `json:"exitCode"`
+	Signal   int    `json:"signal,omitempty"`
+	Stdout   string `json:"stdout,omitempty"`
+	Stderr   string `json:"stderr,omitempty"`
+}
+
+type Request struct {
+	ID          string          `json:"id"`
+	CreatedAt   time.Time       `json:"createdAt"`
+	RequestedBy model.Requester `json:"requestedBy"`
+	Command     model.Command   `json:"command"`
+	Status      model.Status    `json:"status"`
+	Result      *Result         `json:"result,omitempty"`
+}
+
 type Approverd struct {
 	baseURL      string
 	httpClient   *http.Client
@@ -29,66 +45,66 @@ func New(baseURL string, httpClient *http.Client) *Approverd {
 	}
 }
 
-func (c *Approverd) CreateAndWait(ctx context.Context, req model.Request) (model.Request, error) {
+func (c *Approverd) CreateAndWait(ctx context.Context, req model.Request) (Request, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return model.Request{}, err
+		return Request{}, err
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/requests", bytes.NewReader(body))
 	if err != nil {
-		return model.Request{}, err
+		return Request{}, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return model.Request{}, err
+		return Request{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return model.Request{}, fmt.Errorf("create request failed: %s", resp.Status)
+		return Request{}, fmt.Errorf("create request failed: %s", resp.Status)
 	}
 
-	var created model.Request
+	var created Request
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
-		return model.Request{}, err
+		return Request{}, err
 	}
 
 	for {
-		current, err := c.Get(ctx, created.ID())
+		current, err := c.Get(ctx, created.ID)
 		if err != nil {
-			return model.Request{}, err
+			return Request{}, err
 		}
-		switch current.Status() {
+		switch current.Status {
 		case model.StatusSucceeded, model.StatusFailed, model.StatusDenied, model.StatusExpired:
 			return current, nil
 		}
 
 		select {
 		case <-ctx.Done():
-			return model.Request{}, ctx.Err()
+			return Request{}, ctx.Err()
 		case <-time.After(c.pollInterval):
 		}
 	}
 }
 
-func (c *Approverd) Get(ctx context.Context, id string) (model.Request, error) {
+func (c *Approverd) Get(ctx context.Context, id string) (Request, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/requests/"+id, nil)
 	if err != nil {
-		return model.Request{}, err
+		return Request{}, err
 	}
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return model.Request{}, err
+		return Request{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return model.Request{}, fmt.Errorf("get request failed: %s", resp.Status)
+		return Request{}, fmt.Errorf("get request failed: %s", resp.Status)
 	}
-	var req model.Request
+	var req Request
 	if err := json.NewDecoder(resp.Body).Decode(&req); err != nil {
-		return model.Request{}, err
+		return Request{}, err
 	}
 	return req, nil
 }

@@ -5,30 +5,30 @@ import (
 	"testing"
 	"time"
 
+	clientpkg "websudo/internal/client"
 	"websudo/internal/model"
 )
 
 type fakeApprovalClient struct {
 	created model.Request
-	result  model.Request
+	result  clientpkg.Request
 	err     error
 }
 
-func (f *fakeApprovalClient) CreateAndWait(ctx context.Context, req model.Request) (model.Request, error) {
+func (f *fakeApprovalClient) CreateAndWait(ctx context.Context, req model.Request) (clientpkg.Request, error) {
 	f.created = req
 	return f.result, f.err
 }
 
 func TestRunFreezesResolvedCommandAndReturnsExitCode(t *testing.T) {
 	client := &fakeApprovalClient{
-		result: model.NewStoredRequest(
-			"req-result",
-			time.Date(2026, 4, 12, 6, 0, 0, 0, time.UTC),
-			model.Requester{},
-			model.Command{ResolvedPath: "/usr/bin/printf", Argv: []string{"/usr/bin/printf", "hello"}, Cwd: "/tmp"},
-			model.StatusFailed,
-			&model.Result{ExitCode: 7, Stdout: "ok", Stderr: "bad"},
-		),
+		result: clientpkg.Request{
+			ID:        "req-result",
+			CreatedAt: time.Date(2026, 4, 12, 6, 0, 0, 0, time.UTC),
+			Command:   model.Command{ResolvedPath: "/usr/bin/printf", Argv: []string{"/usr/bin/printf", "hello"}, Cwd: "/tmp"},
+			Status:    model.StatusFailed,
+			Result:    &clientpkg.Result{ExitCode: 7, Stdout: "ok", Stderr: "bad"},
+		},
 	}
 
 	exitCode, stdout, stderr, err := Run(context.Background(), client, []string{"/usr/bin/printf", "hello"}, "/tmp")
