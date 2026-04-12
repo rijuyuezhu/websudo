@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,6 +71,29 @@ func TestSQLiteStorePreservesStoredStatus(t *testing.T) {
 	}
 	if got.Status() != model.StatusApproved {
 		t.Fatalf("expected approved, got %q", got.Status())
+	}
+}
+
+func TestSQLiteStoreRejectsInvalidStoredStatus(t *testing.T) {
+	s, cleanup := newTestStore(t)
+	defer cleanup()
+
+	requesterJSON := `{}`
+	commandJSON := `{"ResolvedPath":"/usr/bin/true","Argv":["/usr/bin/true"],"Cwd":"/tmp"}`
+	_, err := s.db.Exec(`
+		INSERT INTO requests (id, status, created_at, requester_json, command_json)
+		VALUES (?, ?, ?, ?, ?)
+	`, "req-invalid-status", "bogus", time.Date(2026, 4, 12, 4, 10, 0, 0, time.UTC).Format(time.RFC3339Nano), requesterJSON, commandJSON)
+	if err != nil {
+		t.Fatalf("insert invalid row error = %v", err)
+	}
+
+	_, err = s.GetRequest(context.Background(), "req-invalid-status")
+	if err == nil {
+		t.Fatal("GetRequest() error = nil, want invalid status error")
+	}
+	if !strings.Contains(err.Error(), `invalid stored status "bogus"`) {
+		t.Fatalf("GetRequest() error = %v, want invalid stored status", err)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -71,6 +72,11 @@ func (s *SQLiteStore) GetRequest(ctx context.Context, id string) (model.Request,
 		return model.Request{}, err
 	}
 
+	status, err := parseStoredStatus(statusText)
+	if err != nil {
+		return model.Request{}, err
+	}
+
 	createdAt, err := time.Parse(time.RFC3339Nano, createdAtText)
 	if err != nil {
 		return model.Request{}, err
@@ -86,7 +92,7 @@ func (s *SQLiteStore) GetRequest(ctx context.Context, id string) (model.Request,
 		return model.Request{}, err
 	}
 
-	return model.NewStoredRequest(id, createdAt, requester, command, model.Status(statusText)), nil
+	return model.NewStoredRequest(id, createdAt, requester, command, status), nil
 }
 
 func (s *SQLiteStore) init() error {
@@ -100,4 +106,14 @@ func (s *SQLiteStore) init() error {
 		)
 	`)
 	return err
+}
+
+func parseStoredStatus(text string) (model.Status, error) {
+	status := model.Status(text)
+	switch status {
+	case model.StatusPending, model.StatusApproved, model.StatusRunning, model.StatusSucceeded, model.StatusFailed, model.StatusDenied, model.StatusExpired:
+		return status, nil
+	default:
+		return "", fmt.Errorf("invalid stored status %q", text)
+	}
 }
