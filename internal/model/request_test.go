@@ -84,3 +84,17 @@ func TestRequestTransitionRejectsInvalidStateChange(t *testing.T) {
 		t.Fatal("succeeded Transition(StatusFailed) error = nil, want invalid transition error")
 	}
 }
+
+func TestNewStoredRequestPreservesStatus(t *testing.T) {
+	req := NewStoredRequest(
+		"req-3",
+		time.Date(2026, 4, 12, 5, 0, 0, 0, time.UTC),
+		Requester{},
+		Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
+		StatusApproved,
+	)
+
+	if got := req.Status(); got != StatusApproved {
+		t.Fatalf("status = %q, want %q", got, StatusApproved)
+	}
+}

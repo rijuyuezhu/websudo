@@ -39,6 +39,14 @@ type Request struct {
 }
 
 func NewRequest(id string, createdAt time.Time, requestedBy Requester, command Command) Request {
+	return newRequest(id, createdAt, requestedBy, command, StatusPending)
+}
+
+func NewStoredRequest(id string, createdAt time.Time, requestedBy Requester, command Command, status Status) Request {
+	return newRequest(id, createdAt, requestedBy, command, status)
+}
+
+func newRequest(id string, createdAt time.Time, requestedBy Requester, command Command, status Status) Request {
 	return Request{
 		id:          id,
 		createdAt:   createdAt,
@@ -48,7 +56,7 @@ func NewRequest(id string, createdAt time.Time, requestedBy Requester, command C
 			Argv:         append([]string(nil), command.Argv...),
 			Cwd:          command.Cwd,
 		},
-		status: StatusPending,
+		status: status,
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -72,10 +71,6 @@ func (s *SQLiteStore) GetRequest(ctx context.Context, id string) (model.Request,
 		return model.Request{}, err
 	}
 
-	if model.Status(statusText) != model.StatusPending {
-		return model.Request{}, fmt.Errorf("unsupported stored status %q", statusText)
-	}
-
 	createdAt, err := time.Parse(time.RFC3339Nano, createdAtText)
 	if err != nil {
 		return model.Request{}, err
@@ -91,7 +86,7 @@ func (s *SQLiteStore) GetRequest(ctx context.Context, id string) (model.Request,
 		return model.Request{}, err
 	}
 
-	return model.NewRequest(id, createdAt, requester, command), nil
+	return model.NewStoredRequest(id, createdAt, requester, command, model.Status(statusText)), nil
 }
 
 func (s *SQLiteStore) init() error {

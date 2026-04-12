@@ -40,6 +40,39 @@ func TestSQLiteStorePersistsAndLoadsPendingRequest(t *testing.T) {
 	}
 }
 
+func TestSQLiteStorePreservesStoredStatus(t *testing.T) {
+	s, cleanup := newTestStore(t)
+	defer cleanup()
+
+	req := model.NewRequest(
+		"req-sqlite-2",
+		time.Date(2026, 4, 12, 4, 5, 0, 0, time.UTC),
+		model.Requester{},
+		model.Command{
+			ResolvedPath: "/usr/bin/true",
+			Argv:         []string{"/usr/bin/true"},
+			Cwd:          "/tmp",
+		},
+	)
+
+	approved, err := req.Transition(model.StatusApproved)
+	if err != nil {
+		t.Fatalf("Transition(StatusApproved) error = %v", err)
+	}
+
+	if err := s.CreateRequest(context.Background(), approved); err != nil {
+		t.Fatalf("CreateRequest() error = %v", err)
+	}
+
+	got, err := s.GetRequest(context.Background(), approved.ID())
+	if err != nil {
+		t.Fatalf("GetRequest() error = %v", err)
+	}
+	if got.Status() != model.StatusApproved {
+		t.Fatalf("expected approved, got %q", got.Status())
+	}
+}
+
 func newTestStore(t *testing.T) (*SQLiteStore, func()) {
 	t.Helper()
 
