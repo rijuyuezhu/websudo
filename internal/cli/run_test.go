@@ -2,10 +2,14 @@ package cli
 
 import (
 	"context"
+	"os"
+	"os/user"
+	"path/filepath"
 	"testing"
 	"time"
 
 	clientpkg "websudo/internal/client"
+	"websudo/internal/config"
 	"websudo/internal/model"
 )
 
@@ -15,9 +19,33 @@ type fakeApprovalClient struct {
 	err     error
 }
 
+type fakeExecutor struct {
+	command model.Command
+	result  model.Result
+	err     error
+}
+
 func (f *fakeApprovalClient) CreateAndWait(ctx context.Context, req model.Request) (clientpkg.Request, error) {
 	f.created = req
 	return f.result, f.err
+}
+
+func (f *fakeExecutor) Execute(ctx context.Context, command model.Command) (model.Result, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+func testDependencies() Dependencies {
+	return Dependencies{
+		Config:   config.Config{TTYTimeoutSeconds: 0, TimestampDir: filepath.Join("/tmp", "unused")},
+		Now:      func() time.Time { return time.Date(2026, 4, 12, 6, 0, 0, 0, time.UTC) },
+		TTYName:  func() (string, error) { return "/dev/pts/7", nil },
+		LookPath: func(file string) (string, error) { return "/usr/bin/" + file, nil },
+		CurrentUser: func() (*user.User, error) {
+			return &user.User{Uid: "1000", Gid: "1000", Username: "alice"}, nil
+		},
+		Hostname: func() (string, error) { return "host", nil },
+	}
 }
 
 func TestRunFreezesResolvedCommandAndReturnsExitCode(t *testing.T) {
@@ -31,7 +59,11 @@ func TestRunFreezesResolvedCommandAndReturnsExitCode(t *testing.T) {
 		},
 	}
 
-	exitCode, stdout, stderr, err := Run(context.Background(), client, []string{"/usr/bin/printf", "hello"}, "/tmp")
+	dep := testDependencies()
+	dep.ApprovalClient = client
+	dep.LookPath = func(file string) (string, error) { return file, nil }
+
+	exitCode, stdout, stderr, err := Run(context.Background(), dep, []string{"/usr/bin/printf", "hello"}, "/tmp")
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -56,7 +88,10 @@ func TestRunFreezesResolvedCommandAndReturnsExitCode(t *testing.T) {
 }
 
 func TestRunReturnsErrorWhenCommandMissing(t *testing.T) {
-	_, _, _, err := Run(context.Background(), &fakeApprovalClient{}, nil, "/tmp")
+	dep := testDependencies()
+	dep.ApprovalClient = &fakeApprovalClient{}
+
+	_, _, _, err := Run(context.Background(), dep, nil, "/tmp")
 	if err == nil {
 		t.Fatal("Run() error = nil, want missing command error")
 	}
@@ -73,7 +108,11 @@ func TestRunMapsSignalToShellExitStatus(t *testing.T) {
 		},
 	}
 
-	exitCode, stdout, stderr, err := Run(context.Background(), client, []string{"/usr/bin/sleep", "30"}, "/tmp")
+	dep := testDependencies()
+	dep.ApprovalClient = client
+	dep.LookPath = func(file string) (string, error) { return file, nil }
+
+	exitCode, stdout, stderr, err := Run(context.Background(), dep, []string{"/usr/bin/sleep", "30"}, "/tmp")
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -85,5 +124,68 @@ func TestRunMapsSignalToShellExitStatus(t *testing.T) {
 	}
 	if stderr != "killed" {
 		t.Fatalf("stderr = %q, want %q", stderr, "killed")
+	}
+}
+
+func TestRunValidateUsesCacheWithoutApproval(t *testing.T) {
+	timestampDir := t.TempDir()
+	now := time.Date(2026, 4, 12, 6, 0, 0, 0, time.UTC)
+	cachePath, ok := ttyTimestampCache{dir: timestampDir, timeout: 300 * time.Second, ttyName: func() (string, error) { return "/dev/pts/7", nil }}.path()
+	if !ok {
+		t.Fatal("expected cache path")
+	}
+	if err := os.WriteFile(cachePath, []byte(now.Add(-time.Minute).Format(time.RFC3339Nano)+"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	client := &fakeApprovalClient{}
+	dep := testDependencies()
+	dep.ApprovalClient = client
+	dep.Config = config.Config{TTYTimeoutSeconds: 300, TimestampDir: timestampDir}
+	dep.Now = func() time.Time { return now }
+
+	exitCode, stdout, stderr, err := Run(context.Background(), dep, []string{"-v"}, "/tmp")
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if exitCode != 0 || stdout != "" || stderr != "" {
+		t.Fatalf("result = (%d, %q, %q), want success with no output", exitCode, stdout, stderr)
+	}
+	if client.created.ID() != "" {
+		t.Fatal("expected cached validation to skip approval request")
+	}
+}
+
+func TestRunUsesDirectExecutorWhenTTYCacheIsFresh(t *testing.T) {
+	timestampDir := t.TempDir()
+	now := time.Date(2026, 4, 12, 6, 0, 0, 0, time.UTC)
+	cachePath, ok := ttyTimestampCache{dir: timestampDir, timeout: 300 * time.Second, ttyName: func() (string, error) { return "/dev/pts/7", nil }}.path()
+	if !ok {
+		t.Fatal("expected cache path")
+	}
+	if err := os.WriteFile(cachePath, []byte(now.Add(-time.Minute).Format(time.RFC3339Nano)+"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	client := &fakeApprovalClient{}
+	executor := &fakeExecutor{result: model.Result{ExitCode: 0, Stdout: "cached"}}
+	dep := testDependencies()
+	dep.ApprovalClient = client
+	dep.Executor = executor
+	dep.Config = config.Config{TTYTimeoutSeconds: 300, TimestampDir: timestampDir}
+	dep.Now = func() time.Time { return now }
+
+	exitCode, stdout, stderr, err := Run(context.Background(), dep, []string{"printf", "hello"}, "/tmp")
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if exitCode != 0 || stdout != "cached" || stderr != "" {
+		t.Fatalf("result = (%d, %q, %q), want cached executor result", exitCode, stdout, stderr)
+	}
+	if client.created.ID() != "" {
+		t.Fatal("expected cached command execution to skip approval request")
+	}
+	if executor.command.ResolvedPath != "/usr/bin/printf" {
+		t.Fatalf("resolved path = %q, want %q", executor.command.ResolvedPath, "/usr/bin/printf")
 	}
 }

@@ -32,7 +32,10 @@ func TestWebsudoEndToEndCreateApproveExecuteAndReplay(t *testing.T) {
 	}, 1)
 
 	go func() {
-		exitCode, stdout, stderr, err := cli.Run(context.Background(), client.New(stack.approverdURL, stack.httpClient), []string{"/usr/bin/sh", "-c", "printf ok; printf bad >&2"}, t.TempDir())
+		exitCode, stdout, stderr, err := cli.Run(context.Background(), cli.Dependencies{
+			ApprovalClient: client.New(stack.approverdURL, stack.httpClient),
+			Config:         config.Config{RootSocketPath: stack.listener.Addr().String()},
+		}, []string{"/usr/bin/sh", "-c", "printf ok; printf bad >&2"}, t.TempDir())
 		results <- struct {
 			exitCode int
 			stdout   string
@@ -60,6 +63,57 @@ func TestWebsudoEndToEndCreateApproveExecuteAndReplay(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for cli.Run to finish")
+	}
+}
+
+func TestWebsudoValidateCachesPerTTY(t *testing.T) {
+	stack, cleanup := startTestStack(t)
+	defer cleanup()
+
+	timestampDir := t.TempDir()
+	ttyName := func() (string, error) { return "/dev/pts/test", nil }
+	dep := cli.Dependencies{
+		ApprovalClient: client.New(stack.approverdURL, stack.httpClient),
+		Config: config.Config{
+			RootSocketPath:    stack.listener.Addr().String(),
+			TTYTimeoutSeconds: 300,
+			TimestampDir:      timestampDir,
+		},
+		TTYName: ttyName,
+	}
+
+	validated := make(chan error, 1)
+	go func() {
+		_, _, _, err := cli.Run(context.Background(), dep, []string{"-v"}, t.TempDir())
+		validated <- err
+	}()
+
+	requestID := waitForPendingRequest(t, stack.store)
+	approveRequest(t, stack.approverdURL, stack.httpClient, requestID, "123456")
+
+	select {
+	case err := <-validated:
+		if err != nil {
+			t.Fatalf("validate Run() error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for validation")
+	}
+
+	exitCode, stdout, stderr, err := cli.Run(context.Background(), dep, []string{"/usr/bin/sh", "-c", "printf cached"}, t.TempDir())
+	if err != nil {
+		t.Fatalf("cached Run() error = %v", err)
+	}
+	if exitCode != 0 || stdout != "cached" || stderr != "" {
+		t.Fatalf("result = (%d, %q, %q), want cached success", exitCode, stdout, stderr)
+	}
+
+	pending, err := stack.store.ListRequestsByStatus(context.Background(), model.StatusPending)
+	if err != nil {
+		t.Fatalf("ListRequestsByStatus() error = %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending requests = %d, want 0", len(pending))
 	}
 }
 

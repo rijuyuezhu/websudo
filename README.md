@@ -5,9 +5,12 @@ Local browser approval for root commands.
 ## Commands
 
 ```sh
+websudo -v
 websudo /usr/bin/true
 paru --sudo websudo -Syu
 ```
+
+`websudo -v` refreshes the approval timestamp for the current TTY. Successful approvals are cached per TTY for 5 minutes by default, similar to `sudo`.
 
 ## Manual Test
 

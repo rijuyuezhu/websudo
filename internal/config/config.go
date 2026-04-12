@@ -14,8 +14,10 @@ import (
 type Config struct {
 	WebAddr                string
 	ApprovalTimeoutSeconds int
+	TTYTimeoutSeconds      int
 	TokenHashHex           string
 	DatabasePath           string
+	TimestampDir           string
 	RootSocketPath         string
 	RootAllowedUID         int
 }
@@ -27,8 +29,10 @@ func Default() Config {
 	cfg := Config{
 		WebAddr:                "127.0.0.1:17878",
 		ApprovalTimeoutSeconds: 600,
+		TTYTimeoutSeconds:      300,
 		TokenHashHex:           MustHashToken("123456"),
 		DatabasePath:           defaultDatabasePath(),
+		TimestampDir:           defaultTimestampDir(),
 		RootSocketPath:         rootSocketPath,
 		RootAllowedUID:         defaultRootAllowedUID(rootSocketPath),
 	}
@@ -38,11 +42,17 @@ func Default() Config {
 	if value, ok := envInt(fileEnv, "WEBSUDO_APPROVAL_TIMEOUT_SECONDS"); ok {
 		cfg.ApprovalTimeoutSeconds = value
 	}
+	if value, ok := envInt(fileEnv, "WEBSUDO_TTY_TIMEOUT_SECONDS"); ok {
+		cfg.TTYTimeoutSeconds = value
+	}
 	if value, ok := envString(fileEnv, "WEBSUDO_TOKEN_HASH_HEX"); ok {
 		cfg.TokenHashHex = value
 	}
 	if value, ok := envString(fileEnv, "WEBSUDO_DATABASE_PATH"); ok {
 		cfg.DatabasePath = value
+	}
+	if value, ok := envString(fileEnv, "WEBSUDO_TIMESTAMP_DIR"); ok {
+		cfg.TimestampDir = value
 	}
 	if value, ok := envString(fileEnv, "WEBSUDO_ROOT_SOCKET_PATH"); ok {
 		cfg.RootSocketPath = value
@@ -66,6 +76,16 @@ func defaultDatabasePath() string {
 		return filepath.Join(homeDir, ".websudo", "websudo.db")
 	}
 	return filepath.Join(".", ".websudo", "websudo.db")
+}
+
+func defaultTimestampDir() string {
+	if runtimeDir, ok := envString(nil, "XDG_RUNTIME_DIR"); ok {
+		return filepath.Join(runtimeDir, "websudo")
+	}
+	if homeDir, err := os.UserHomeDir(); err == nil && strings.TrimSpace(homeDir) != "" {
+		return filepath.Join(homeDir, ".websudo", "timestamps")
+	}
+	return filepath.Join(".", ".websudo", "timestamps")
 }
 
 func defaultRootSocketPath() string {
