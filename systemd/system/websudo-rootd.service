@@ -1,0 +1,11 @@
+[Unit]
+Description=websudo root executor
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/websudo-rootd
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
