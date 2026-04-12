@@ -163,6 +163,25 @@ func ListenAndServe(socketPath string) error {
 	return Server{Executor: Executor{}}.Serve(listener)
 }
 
+func Execute(ctx context.Context, socketPath string, req ExecRequest) (ExecResponse, error) {
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "unix", socketPath)
+	if err != nil {
+		return ExecResponse{}, err
+	}
+	defer conn.Close()
+
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		return ExecResponse{}, err
+	}
+
+	var response ExecResponse
+	if err := json.NewDecoder(conn).Decode(&response); err != nil {
+		return ExecResponse{}, err
+	}
+	return response, nil
+}
+
 func listenUnixSocket(socketPath string) (net.Listener, error) {
 	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err

@@ -97,6 +97,48 @@ func TestSQLiteStoreRejectsInvalidStoredStatus(t *testing.T) {
 	}
 }
 
+func TestSQLiteStorePersistsCompletedRequestResult(t *testing.T) {
+	s, cleanup := newTestStore(t)
+	defer cleanup()
+
+	req := model.NewRequest(
+		"req-complete",
+		time.Date(2026, 4, 12, 6, 30, 0, 0, time.UTC),
+		model.Requester{},
+		model.Command{ResolvedPath: "/usr/bin/sh", Argv: []string{"/usr/bin/sh", "-c", "exit 7"}, Cwd: "/tmp"},
+	)
+	approved, err := req.Transition(model.StatusApproved)
+	if err != nil {
+		t.Fatalf("Transition(StatusApproved) error = %v", err)
+	}
+	running, err := approved.Transition(model.StatusRunning)
+	if err != nil {
+		t.Fatalf("Transition(StatusRunning) error = %v", err)
+	}
+	if err := s.CreateRequest(context.Background(), running); err != nil {
+		t.Fatalf("CreateRequest() error = %v", err)
+	}
+
+	_, err = s.CompleteRequest(context.Background(), running.ID(), model.Result{ExitCode: 7, Stdout: "ok", Stderr: "bad"})
+	if err != nil {
+		t.Fatalf("CompleteRequest() error = %v", err)
+	}
+
+	got, err := s.GetRequest(context.Background(), running.ID())
+	if err != nil {
+		t.Fatalf("GetRequest() error = %v", err)
+	}
+	if got.Status() != model.StatusFailed {
+		t.Fatalf("status = %q, want %q", got.Status(), model.StatusFailed)
+	}
+	if got.Result() == nil {
+		t.Fatal("result = nil, want persisted result")
+	}
+	if got.Result().Stdout != "ok" || got.Result().Stderr != "bad" || got.Result().ExitCode != 7 {
+		t.Fatalf("result = %#v, want persisted stdout/stderr/exit code", got.Result())
+	}
+}
+
 func newTestStore(t *testing.T) (*SQLiteStore, func()) {
 	t.Helper()
 

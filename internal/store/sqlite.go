@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -48,11 +49,15 @@ func (s *SQLiteStore) CreateRequest(ctx context.Context, req model.Request) erro
 	if err != nil {
 		return err
 	}
+	resultJSON, err := json.Marshal(req.Result())
+	if err != nil {
+		return err
+	}
 
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO requests (id, status, created_at, requester_json, command_json)
-		VALUES (?, ?, ?, ?, ?)
-	`, req.ID(), string(req.Status()), req.CreatedAt().UTC().Format(time.RFC3339Nano), string(requesterJSON), string(commandJSON))
+		INSERT INTO requests (id, status, created_at, requester_json, command_json, result_json)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, req.ID(), string(req.Status()), req.CreatedAt().UTC().Format(time.RFC3339Nano), string(requesterJSON), string(commandJSON), string(resultJSON))
 	return err
 }
 
@@ -62,43 +67,24 @@ func (s *SQLiteStore) GetRequest(ctx context.Context, id string) (model.Request,
 		createdAtText string
 		requesterJSON string
 		commandJSON   string
+		resultJSON    string
 	)
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT status, created_at, requester_json, command_json
+		SELECT status, created_at, requester_json, command_json, COALESCE(result_json, 'null')
 		FROM requests
 		WHERE id = ?
-	`, id).Scan(&statusText, &createdAtText, &requesterJSON, &commandJSON)
+	`, id).Scan(&statusText, &createdAtText, &requesterJSON, &commandJSON, &resultJSON)
 	if err != nil {
 		return model.Request{}, err
 	}
 
-	status, err := parseStoredStatus(statusText)
-	if err != nil {
-		return model.Request{}, err
-	}
-
-	createdAt, err := time.Parse(time.RFC3339Nano, createdAtText)
-	if err != nil {
-		return model.Request{}, err
-	}
-
-	var requester model.Requester
-	if err := json.Unmarshal([]byte(requesterJSON), &requester); err != nil {
-		return model.Request{}, err
-	}
-
-	var command model.Command
-	if err := json.Unmarshal([]byte(commandJSON), &command); err != nil {
-		return model.Request{}, err
-	}
-
-	return model.NewStoredRequest(id, createdAt, requester, command, status), nil
+	return decodeRequestRow(id, statusText, createdAtText, requesterJSON, commandJSON, resultJSON)
 }
 
 func (s *SQLiteStore) ListRequestsByStatus(ctx context.Context, status model.Status) ([]model.Request, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, status, created_at, requester_json, command_json
+		SELECT id, status, created_at, requester_json, command_json, COALESCE(result_json, 'null')
 		FROM requests
 		WHERE status = ?
 		ORDER BY created_at DESC
@@ -113,7 +99,7 @@ func (s *SQLiteStore) ListRequestsByStatus(ctx context.Context, status model.Sta
 
 func (s *SQLiteStore) ListRequestsExcludingStatus(ctx context.Context, status model.Status, limit int) ([]model.Request, error) {
 	query := `
-		SELECT id, status, created_at, requester_json, command_json
+		SELECT id, status, created_at, requester_json, command_json, COALESCE(result_json, 'null')
 		FROM requests
 		WHERE status <> ?
 		ORDER BY created_at DESC
@@ -131,6 +117,40 @@ func (s *SQLiteStore) ListRequestsExcludingStatus(ctx context.Context, status mo
 	defer rows.Close()
 
 	return scanRequests(rows)
+}
+
+func (s *SQLiteStore) CompleteRequest(ctx context.Context, id string, result model.Result) (model.Request, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.Request{}, err
+	}
+	defer tx.Rollback()
+
+	current, err := getRequest(tx, ctx, id)
+	if err != nil {
+		return model.Request{}, err
+	}
+	completed, err := current.WithResult(result)
+	if err != nil {
+		return model.Request{}, err
+	}
+	resultJSON, err := json.Marshal(completed.Result())
+	if err != nil {
+		return model.Request{}, err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE requests
+		SET status = ?, result_json = ?
+		WHERE id = ?
+	`, string(completed.Status()), string(resultJSON), id)
+	if err != nil {
+		return model.Request{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Request{}, err
+	}
+	return completed, nil
 }
 
 func (s *SQLiteStore) UpdateRequestStatus(ctx context.Context, id string, from, to model.Status) (model.Request, error) {
@@ -174,10 +194,18 @@ func (s *SQLiteStore) init() error {
 			status TEXT NOT NULL,
 			created_at TEXT NOT NULL,
 			requester_json TEXT NOT NULL,
-			command_json TEXT NOT NULL
+			command_json TEXT NOT NULL,
+			result_json TEXT
 		)
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`ALTER TABLE requests ADD COLUMN result_json TEXT`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return err
+	}
+	return nil
 }
 
 func parseStoredStatus(text string) (model.Status, error) {
@@ -204,18 +232,19 @@ func getRequest(db requestQuerier, ctx context.Context, id string) (model.Reques
 		createdAtText string
 		requesterJSON string
 		commandJSON   string
+		resultJSON    string
 	)
 
 	err := db.QueryRowContext(ctx, `
-		SELECT status, created_at, requester_json, command_json
+		SELECT status, created_at, requester_json, command_json, COALESCE(result_json, 'null')
 		FROM requests
 		WHERE id = ?
-	`, id).Scan(&statusText, &createdAtText, &requesterJSON, &commandJSON)
+	`, id).Scan(&statusText, &createdAtText, &requesterJSON, &commandJSON, &resultJSON)
 	if err != nil {
 		return model.Request{}, err
 	}
 
-	return decodeRequestRow(id, statusText, createdAtText, requesterJSON, commandJSON)
+	return decodeRequestRow(id, statusText, createdAtText, requesterJSON, commandJSON, resultJSON)
 }
 
 func scanRequests(rows *sql.Rows) ([]model.Request, error) {
@@ -227,11 +256,12 @@ func scanRequests(rows *sql.Rows) ([]model.Request, error) {
 			createdAtText string
 			requesterJSON string
 			commandJSON   string
+			resultJSON    string
 		)
-		if err := rows.Scan(&id, &statusText, &createdAtText, &requesterJSON, &commandJSON); err != nil {
+		if err := rows.Scan(&id, &statusText, &createdAtText, &requesterJSON, &commandJSON, &resultJSON); err != nil {
 			return nil, err
 		}
-		req, err := decodeRequestRow(id, statusText, createdAtText, requesterJSON, commandJSON)
+		req, err := decodeRequestRow(id, statusText, createdAtText, requesterJSON, commandJSON, resultJSON)
 		if err != nil {
 			return nil, err
 		}
@@ -243,7 +273,7 @@ func scanRequests(rows *sql.Rows) ([]model.Request, error) {
 	return requests, nil
 }
 
-func decodeRequestRow(id, statusText, createdAtText, requesterJSON, commandJSON string) (model.Request, error) {
+func decodeRequestRow(id, statusText, createdAtText, requesterJSON, commandJSON, resultJSON string) (model.Request, error) {
 	status, err := parseStoredStatus(statusText)
 	if err != nil {
 		return model.Request{}, err
@@ -264,5 +294,14 @@ func decodeRequestRow(id, statusText, createdAtText, requesterJSON, commandJSON 
 		return model.Request{}, err
 	}
 
-	return model.NewStoredRequest(id, createdAt, requester, command, status), nil
+	var result *model.Result
+	if strings.TrimSpace(resultJSON) != "" && strings.TrimSpace(resultJSON) != "null" {
+		var decoded model.Result
+		if err := json.Unmarshal([]byte(resultJSON), &decoded); err != nil {
+			return model.Request{}, err
+		}
+		result = &decoded
+	}
+
+	return model.NewStoredRequest(id, createdAt, requester, command, status, result), nil
 }

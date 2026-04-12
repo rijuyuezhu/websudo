@@ -92,9 +92,37 @@ func TestNewStoredRequestPreservesStatus(t *testing.T) {
 		Requester{},
 		Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
 		StatusApproved,
+		nil,
 	)
 
 	if got := req.Status(); got != StatusApproved {
 		t.Fatalf("status = %q, want %q", got, StatusApproved)
+	}
+}
+
+func TestRequestWithResultStoresCompletedOutput(t *testing.T) {
+	req := NewRequest(
+		"req-4",
+		time.Date(2026, 4, 12, 5, 10, 0, 0, time.UTC),
+		Requester{},
+		Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
+	)
+	approved, err := req.Transition(StatusApproved)
+	if err != nil {
+		t.Fatalf("Transition(StatusApproved) error = %v", err)
+	}
+	running, err := approved.Transition(StatusRunning)
+	if err != nil {
+		t.Fatalf("Transition(StatusRunning) error = %v", err)
+	}
+	completed, err := running.WithResult(Result{Stdout: "ok"})
+	if err != nil {
+		t.Fatalf("WithResult() error = %v", err)
+	}
+	if completed.Status() != StatusSucceeded {
+		t.Fatalf("status = %q, want %q", completed.Status(), StatusSucceeded)
+	}
+	if completed.Result() == nil || completed.Result().Stdout != "ok" {
+		t.Fatalf("result = %#v, want stdout to be preserved", completed.Result())
 	}
 }

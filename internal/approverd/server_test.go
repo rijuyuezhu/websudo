@@ -1,6 +1,8 @@
 package approverd
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"html/template"
 	"net/http"
@@ -139,6 +141,85 @@ func TestPendingPageShowsQueuedRequest(t *testing.T) {
 	}
 }
 
+func TestCreateRequestAPIStoresFrozenRequest(t *testing.T) {
+	store := newMemoryStore(nil)
+	srv := NewServer(Dependencies{
+		Config:    config.Config{TokenHashHex: config.MustHashToken("123456")},
+		Store:     store,
+		Templates: testTemplates(t),
+	})
+
+	body := strings.NewReader(`{"id":"req-create","createdAt":"2026-04-12T06:45:00Z","requestedBy":{"username":"rijuyuezhu"},"command":{"resolvedPath":"/usr/bin/true","argv":["/usr/bin/true"],"cwd":"/tmp"},"status":"pending"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/requests", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusCreated)
+	}
+	stored, err := store.GetRequest("req-create")
+	if err != nil {
+		t.Fatalf("GetRequest() error = %v", err)
+	}
+	if stored.Command().ResolvedPath != "/usr/bin/true" {
+		t.Fatalf("resolved path = %q, want %q", stored.Command().ResolvedPath, "/usr/bin/true")
+	}
+}
+
+func TestApproveHandlerExecutesRequestAndStoresResult(t *testing.T) {
+	store := newMemoryStore([]model.Request{
+		model.NewRequest(
+			"req-exec",
+			time.Date(2026, 4, 12, 7, 0, 0, 0, time.UTC),
+			model.Requester{Username: "rijuyuezhu"},
+			model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
+		),
+	})
+	srv := NewServer(Dependencies{
+		Config:    config.Config{TokenHashHex: config.MustHashToken("123456")},
+		Store:     store,
+		Templates: testTemplates(t),
+		Executor:  fakeExecutor{result: model.Result{ExitCode: 0, Stdout: "ok"}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-exec/approve", strings.NewReader(`{"token":"123456"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusAccepted)
+	}
+	stored, err := store.GetRequest("req-exec")
+	if err != nil {
+		t.Fatalf("GetRequest() error = %v", err)
+	}
+	if stored.Status() != model.StatusSucceeded {
+		t.Fatalf("status = %q, want %q", stored.Status(), model.StatusSucceeded)
+	}
+	if stored.Result() == nil || stored.Result().Stdout != "ok" {
+		t.Fatalf("result = %#v, want persisted execution result", stored.Result())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/requests/req-exec", nil)
+	getW := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want %d", getW.Code, http.StatusOK)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(getW.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if payload["status"] != string(model.StatusSucceeded) {
+		t.Fatalf("payload status = %#v, want %q", payload["status"], model.StatusSucceeded)
+	}
+}
+
 func testTemplates(t *testing.T) *template.Template {
 	t.Helper()
 
@@ -149,6 +230,15 @@ func testTemplates(t *testing.T) *template.Template {
 type memoryStore struct {
 	requests map[string]model.Request
 	ordered  []string
+}
+
+type fakeExecutor struct {
+	result model.Result
+	err    error
+}
+
+func (f fakeExecutor) Execute(_ context.Context, _ model.Command) (model.Result, error) {
+	return f.result, f.err
 }
 
 func newMemoryStore(requests []model.Request) *memoryStore {
@@ -190,12 +280,47 @@ func (s *memoryStore) GetRequest(id string) (model.Request, error) {
 	return req, nil
 }
 
+func (s *memoryStore) CreateRequest(req model.Request) error {
+	if _, exists := s.requests[req.ID()]; exists {
+		return errors.New("request already exists")
+	}
+	s.requests[req.ID()] = req
+	s.ordered = append([]string{req.ID()}, s.ordered...)
+	return nil
+}
+
 func (s *memoryStore) ApproveRequest(id string) (model.Request, error) {
 	req, err := s.GetRequest(id)
 	if err != nil {
 		return model.Request{}, err
 	}
 	next, err := req.Transition(model.StatusApproved)
+	if err != nil {
+		return model.Request{}, err
+	}
+	s.requests[id] = next
+	return next, nil
+}
+
+func (s *memoryStore) MarkRunning(id string) (model.Request, error) {
+	req, err := s.GetRequest(id)
+	if err != nil {
+		return model.Request{}, err
+	}
+	next, err := req.Transition(model.StatusRunning)
+	if err != nil {
+		return model.Request{}, err
+	}
+	s.requests[id] = next
+	return next, nil
+}
+
+func (s *memoryStore) CompleteRequest(id string, result model.Result) (model.Request, error) {
+	req, err := s.GetRequest(id)
+	if err != nil {
+		return model.Request{}, err
+	}
+	next, err := req.WithResult(result)
 	if err != nil {
 		return model.Request{}, err
 	}
