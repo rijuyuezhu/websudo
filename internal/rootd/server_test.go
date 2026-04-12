@@ -3,11 +3,12 @@ package rootd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -140,14 +141,9 @@ func TestServerReturnsTimeoutErrorForIncompleteRequest(t *testing.T) {
 	var response ExecResponse
 	err = json.NewDecoder(conn).Decode(&response)
 	if err != nil {
-		if errors.Is(err, os.ErrDeadlineExceeded) {
-			t.Fatal("Decode() timed out waiting for server to close or respond")
-		}
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			t.Fatal("Decode() timed out waiting for server to close or respond")
-		}
-	} else if !strings.Contains(response.Error, "timeout") {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if !strings.Contains(response.Error, "timeout") {
 		t.Fatalf("error = %q, want timeout message", response.Error)
 	}
 
@@ -157,4 +153,49 @@ func TestServerReturnsTimeoutErrorForIncompleteRequest(t *testing.T) {
 	if err := <-serverErr; err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
+}
+
+func TestExecutorKillsProcessGroupOnTimeout(t *testing.T) {
+	childPIDPath := filepath.Join(t.TempDir(), "child.pid")
+
+	exec := Executor{}
+	startedAt := time.Now()
+	_, err := exec.Run(context.Background(), ExecRequest{
+		ResolvedPath: "/usr/bin/sh",
+		Argv: []string{"/usr/bin/sh", "-c",
+			"sleep 30 & child=$!; printf %s \"$child\" > \"$1\"; wait",
+			"sh", childPIDPath,
+		},
+		Cwd:     t.TempDir(),
+		Timeout: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("Run() took %s, want timeout-driven return", elapsed)
+	}
+
+	childPIDBytes, err := os.ReadFile(childPIDPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	childPID, err := strconv.Atoi(strings.TrimSpace(string(childPIDBytes)))
+	if err != nil {
+		t.Fatalf("Atoi() error = %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for processExists(childPID) && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if processExists(childPID) {
+		_ = syscall.Kill(childPID, syscall.SIGKILL)
+		t.Fatalf("child process %d still running after timeout", childPID)
+	}
+}
+
+func processExists(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil
 }

@@ -50,13 +50,28 @@ func (Executor) Run(ctx context.Context, req ExecRequest) (ExecResult, error) {
 
 	cmd := exec.CommandContext(ctx, req.ResolvedPath, args...)
 	cmd.Dir = req.Cwd
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return ExecResult{}, err
+	}
+
+	done := make(chan struct{})
+	defer close(done)
+	go func(pid int) {
+		select {
+		case <-ctx.Done():
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+		case <-done:
+		}
+	}(cmd.Process.Pid)
+
+	err := cmd.Wait()
 	result := ExecResult{
 		Stdout: stdout.String(),
 		Stderr: stderr.String(),
@@ -110,7 +125,7 @@ func (s Server) Serve(listener net.Listener) error {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					responseErr = fmt.Sprintf("request decode timeout after %s", timeout)
 				}
-				_ = json.NewEncoder(conn).Encode(ExecResponse{Error: responseErr})
+				_ = writeResponse(conn, timeout, ExecResponse{Error: responseErr})
 				return
 			}
 			if err := conn.SetDeadline(time.Time{}); err != nil {
@@ -126,9 +141,16 @@ func (s Server) Serve(listener net.Listener) error {
 			if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
 				return
 			}
-			_ = json.NewEncoder(conn).Encode(response)
+			_ = writeResponse(conn, timeout, response)
 		}()
 	}
+}
+
+func writeResponse(conn net.Conn, timeout time.Duration, response ExecResponse) error {
+	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return err
+	}
+	return json.NewEncoder(conn).Encode(response)
 }
 
 func ListenAndServe(socketPath string) error {
