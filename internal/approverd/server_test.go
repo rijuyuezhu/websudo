@@ -45,7 +45,7 @@ func TestApproveHandlerRequiresValidToken(t *testing.T) {
 	}
 }
 
-func TestDenyHandlerRejectsPendingRequestWithoutToken(t *testing.T) {
+func TestDenyHandlerRequiresValidToken(t *testing.T) {
 	store := newMemoryStore([]model.Request{
 		model.NewRequest(
 			"req-2",
@@ -54,22 +54,59 @@ func TestDenyHandlerRejectsPendingRequestWithoutToken(t *testing.T) {
 			model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
 		),
 	})
-	srv := NewServer(Dependencies{Store: store, Templates: testTemplates(t)})
+	srv := NewServer(Dependencies{
+		Config:    config.Config{TokenHashHex: config.MustHashToken("123456")},
+		Store:     store,
+		Templates: testTemplates(t),
+	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-2/deny", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-2/deny", strings.NewReader(`{"token":"000000"}`))
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(w, req)
 
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("expected 303, got %d", w.Code)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
 	}
 	stored, err := store.GetRequest("req-2")
 	if err != nil {
 		t.Fatalf("GetRequest() error = %v", err)
 	}
-	if stored.Status() != model.StatusDenied {
-		t.Fatalf("expected denied, got %q", stored.Status())
+	if stored.Status() != model.StatusPending {
+		t.Fatalf("expected pending, got %q", stored.Status())
+	}
+}
+
+func TestRequestPageIncludesTokenFieldForDenyAction(t *testing.T) {
+	srv := NewServer(Dependencies{
+		Store: newMemoryStore([]model.Request{
+			model.NewRequest(
+				"req-4",
+				time.Date(2026, 4, 12, 5, 15, 0, 0, time.UTC),
+				model.Requester{Username: "rijuyuezhu"},
+				model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
+			),
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/requests/req-4", nil)
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `<form method="post" action="/api/requests/req-4/deny">`) {
+		t.Fatalf("expected deny form to be rendered")
+	}
+	if !strings.Contains(body, `<form method="post" action="/api/requests/req-4/deny">
+    <label>Token <input name="token" /></label>
+    <button type="submit">Deny</button>
+  </form>`) {
+		t.Fatalf("expected deny flow to render a token input")
 	}
 }
 

@@ -155,19 +155,18 @@ func (s *Server) handleRequestAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var err error
+	token, err := approvalToken(r)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if !config.VerifyToken(s.config.TokenHashHex, token) {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
 	switch action {
 	case "approve":
-		var token string
-		token, err = approvalToken(r)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		if !config.VerifyToken(s.config.TokenHashHex, token) {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
 		_, err = s.store.ApproveRequest(id)
 	case "deny":
 		_, err = s.store.DenyRequest(id)
