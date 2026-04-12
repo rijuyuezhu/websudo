@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<body>
+  <h1>Pending Requests</h1>
+  {{range .Pending}}
+  <article>
+    <h2><a href="/requests/{{.ID}}">{{.ID}}</a></h2>
+    <p>Status: {{.Status}}</p>
+    <pre>{{.Command.ResolvedPath}}</pre>
+  </article>
+  {{else}}
+  <p>No pending requests.</p>
+  {{end}}
+
+  <h1>Recent Requests</h1>
+  {{range .Recent}}
+  <article>
+    <h2><a href="/requests/{{.ID}}">{{.ID}}</a></h2>
+    <p>Status: {{.Status}}</p>
+  </article>
+  {{else}}
+  <p>No recent requests.</p>
+  {{end}}
+</body>
+</html>

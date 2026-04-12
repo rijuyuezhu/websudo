@@ -11,6 +11,9 @@ func TestDefaultsUseLocalhostAndTenMinuteTimeout(t *testing.T) {
 	if cfg.ApprovalTimeoutSeconds != 600 {
 		t.Fatalf("unexpected timeout: %d", cfg.ApprovalTimeoutSeconds)
 	}
+	if !VerifyToken(cfg.TokenHashHex, "123456") {
+		t.Fatalf("expected default token hash to verify the default 6-digit token")
+	}
 }
 
 func TestVerifyTokenMatchesHash(t *testing.T) {

@@ -1,0 +1,11 @@
+[Unit]
+Description=websudo approval daemon
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/websudo-approverd
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

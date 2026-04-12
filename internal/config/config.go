@@ -19,6 +19,7 @@ func Default() Config {
 	return Config{
 		WebAddr:                "127.0.0.1:17878",
 		ApprovalTimeoutSeconds: 600,
+		TokenHashHex:           MustHashToken("123456"),
 		DatabasePath:           "./websudo.db",
 		RootSocketPath:         "/run/websudo-rootd.sock",
 	}
