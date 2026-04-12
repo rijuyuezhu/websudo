@@ -153,11 +153,12 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if err := s.store.CreateRequest(req); err != nil {
+	storedReq := model.NewRequest(req.ID(), req.CreatedAt(), req.RequestedBy(), req.Command())
+	if err := s.store.CreateRequest(storedReq); err != nil {
 		w.WriteHeader(http.StatusConflict)
 		return
 	}
-	writeJSON(w, http.StatusCreated, req)
+	writeJSON(w, http.StatusCreated, storedReq)
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {

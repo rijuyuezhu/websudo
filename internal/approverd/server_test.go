@@ -168,6 +168,47 @@ func TestCreateRequestAPIStoresFrozenRequest(t *testing.T) {
 	}
 }
 
+func TestCreateRequestAPIIgnoresForgedLifecycleFields(t *testing.T) {
+	store := newMemoryStore(nil)
+	srv := NewServer(Dependencies{
+		Config:    config.Config{TokenHashHex: config.MustHashToken("123456")},
+		Store:     store,
+		Templates: testTemplates(t),
+	})
+
+	body := strings.NewReader(`{"id":"req-forged","createdAt":"2026-04-12T06:46:00Z","requestedBy":{"username":"rijuyuezhu"},"command":{"resolvedPath":"/usr/bin/true","argv":["/usr/bin/true"],"cwd":"/tmp"},"status":"succeeded","result":{"exitCode":0,"stdout":"forged"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/requests", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusCreated)
+	}
+	stored, err := store.GetRequest("req-forged")
+	if err != nil {
+		t.Fatalf("GetRequest() error = %v", err)
+	}
+	if stored.Status() != model.StatusPending {
+		t.Fatalf("status = %q, want %q", stored.Status(), model.StatusPending)
+	}
+	if stored.Result() != nil {
+		t.Fatalf("result = %#v, want nil", stored.Result())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if payload["status"] != string(model.StatusPending) {
+		t.Fatalf("payload status = %#v, want %q", payload["status"], model.StatusPending)
+	}
+	if _, ok := payload["result"]; ok {
+		t.Fatalf("payload result = %#v, want omitted", payload["result"])
+	}
+}
+
 func TestApproveHandlerExecutesRequestAndStoresResult(t *testing.T) {
 	store := newMemoryStore([]model.Request{
 		model.NewRequest(
