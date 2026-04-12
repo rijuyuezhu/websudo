@@ -309,7 +309,7 @@ func (s *Server) handleRequestAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/requests/"+id, http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

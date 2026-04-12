@@ -110,6 +110,66 @@ func TestRequestPageIncludesTokenFieldForDenyAction(t *testing.T) {
   </form>`) {
 		t.Fatalf("expected deny flow to render a token input")
 	}
+	if !strings.Contains(body, `<a href="/">Back</a>`) {
+		t.Fatalf("expected request page to include a back link to root")
+	}
+}
+
+func TestApproveFormRedirectsBackToRoot(t *testing.T) {
+	store := newMemoryStore([]model.Request{
+		model.NewRequest(
+			"req-form-approve",
+			time.Date(2026, 4, 12, 7, 30, 0, 0, time.UTC),
+			model.Requester{Username: "rijuyuezhu"},
+			model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
+		),
+	})
+	srv := NewServer(Dependencies{
+		Config:   config.Config{TokenHashHex: config.MustHashToken("123456")},
+		Store:    store,
+		Executor: fakeExecutor{result: model.Result{ExitCode: 0}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-form-approve/approve", strings.NewReader("token=123456"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusSeeOther)
+	}
+	if location := w.Header().Get("Location"); location != "/" {
+		t.Fatalf("location = %q, want %q", location, "/")
+	}
+}
+
+func TestDenyFormRedirectsBackToRoot(t *testing.T) {
+	store := newMemoryStore([]model.Request{
+		model.NewRequest(
+			"req-form-deny",
+			time.Date(2026, 4, 12, 7, 31, 0, 0, time.UTC),
+			model.Requester{Username: "rijuyuezhu"},
+			model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
+		),
+	})
+	srv := NewServer(Dependencies{
+		Config: config.Config{TokenHashHex: config.MustHashToken("123456")},
+		Store:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-form-deny/deny", strings.NewReader("token=123456"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusSeeOther)
+	}
+	if location := w.Header().Get("Location"); location != "/" {
+		t.Fatalf("location = %q, want %q", location, "/")
+	}
 }
 
 func TestPendingPageShowsQueuedRequest(t *testing.T) {

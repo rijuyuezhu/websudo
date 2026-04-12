@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -94,6 +95,20 @@ func TestSQLiteStoreRejectsInvalidStoredStatus(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `invalid stored status "bogus"`) {
 		t.Fatalf("GetRequest() error = %v, want invalid stored status", err)
+	}
+}
+
+func TestOpenCreatesParentDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".websudo", "websudo.db")
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("Stat(%q) error = %v", path, err)
 	}
 }
 

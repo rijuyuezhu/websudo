@@ -1,12 +1,21 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestDefaultsUseLocalhostAndTenMinuteTimeout(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("WEBSUDO_ENV_FILE", filepath.Join(t.TempDir(), "missing.env"))
+	t.Setenv("WEBSUDO_DATABASE_PATH", "")
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	t.Setenv("WEBSUDO_ROOT_SOCKET_PATH", "")
+	t.Setenv("WEBSUDO_ROOT_ALLOWED_UID", "")
+
 	cfg := Default()
 
 	if cfg.WebAddr != "127.0.0.1:17878" {
@@ -17,6 +26,9 @@ func TestDefaultsUseLocalhostAndTenMinuteTimeout(t *testing.T) {
 	}
 	if !VerifyToken(cfg.TokenHashHex, "123456") {
 		t.Fatalf("expected default token hash to verify the default 6-digit token")
+	}
+	if cfg.DatabasePath != filepath.Join(homeDir, ".websudo", "websudo.db") {
+		t.Fatalf("database path = %q, want %q", cfg.DatabasePath, filepath.Join(homeDir, ".websudo", "websudo.db"))
 	}
 }
 
@@ -71,5 +83,27 @@ func TestDefaultsDeriveAllowedUIDFromConfiguredRuntimeSocket(t *testing.T) {
 
 	if cfg.RootAllowedUID != 2345 {
 		t.Fatalf("root allowed uid = %d, want %d", cfg.RootAllowedUID, 2345)
+	}
+}
+
+func TestDefaultsLoadEnvironmentFileOverrides(t *testing.T) {
+	homeDir := t.TempDir()
+	envPath := filepath.Join(t.TempDir(), "websudo.env")
+	if err := os.WriteFile(envPath, []byte(fmt.Sprintf("WEBSUDO_WEB_ADDR=127.0.0.1:19999\nWEBSUDO_DATABASE_PATH=%s\n", filepath.Join(homeDir, ".websudo", "from-env.db"))), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("WEBSUDO_ENV_FILE", envPath)
+	t.Setenv("WEBSUDO_WEB_ADDR", "")
+	t.Setenv("WEBSUDO_DATABASE_PATH", "")
+
+	cfg := Default()
+
+	if cfg.WebAddr != "127.0.0.1:19999" {
+		t.Fatalf("web addr = %q, want %q", cfg.WebAddr, "127.0.0.1:19999")
+	}
+	if cfg.DatabasePath != filepath.Join(homeDir, ".websudo", "from-env.db") {
+		t.Fatalf("database path = %q, want %q", cfg.DatabasePath, filepath.Join(homeDir, ".websudo", "from-env.db"))
 	}
 }
