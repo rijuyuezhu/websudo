@@ -36,17 +36,19 @@ type Executor interface {
 }
 
 type Dependencies struct {
-	Config    config.Config
-	Store     Store
-	Templates *template.Template
-	Executor  Executor
+	Config       config.Config
+	Store        Store
+	AskpassStore *AskpassStore
+	Templates    *template.Template
+	Executor     Executor
 }
 
 type Server struct {
-	config    config.Config
-	store     Store
-	templates *template.Template
-	executor  Executor
+	config       config.Config
+	store        Store
+	askpassStore *AskpassStore
+	templates    *template.Template
+	executor     Executor
 }
 
 type RootExecutor struct {
@@ -106,19 +108,27 @@ func NewServer(dep Dependencies) *Server {
 	if executor == nil {
 		executor = RootExecutor{SocketPath: dep.Config.RootSocketPath}
 	}
+	askpassStore := dep.AskpassStore
+	if askpassStore == nil {
+		askpassStore = NewAskpassStore()
+	}
 
 	return &Server{
-		config:    dep.Config,
-		store:     dep.Store,
-		templates: templates,
-		executor:  executor,
+		config:       dep.Config,
+		store:        dep.Store,
+		askpassStore: askpassStore,
+		templates:    templates,
+		executor:     executor,
 	}
 }
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/askpass/", s.handleAskpassPage)
 	mux.HandleFunc("/requests/", s.handleRequestPage)
+	mux.HandleFunc("/api/askpass", s.handleAskpassCreate)
+	mux.HandleFunc("/api/askpass/", s.handleAskpassAction)
 	mux.HandleFunc("/api/requests", s.handleRequests)
 	mux.HandleFunc("/api/requests/", s.handleRequestAction)
 	return mux
@@ -176,30 +186,33 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if s.store == nil {
-		http.Error(w, "store not configured", http.StatusInternalServerError)
-		return
-	}
 	if err := s.expirePendingRequests(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.expireAskpassRequests()
 
-	pending, err := s.store.ListPendingRequests()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	recent, err := s.store.ListRecentRequests()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	var pending []model.Request
+	var recent []model.Request
+	if s.store != nil {
+		var err error
+		pending, err = s.store.ListPendingRequests()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		recent, err = s.store.ListRecentRequests()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.templates.ExecuteTemplate(w, "index.html", map[string]any{
-		"Pending": pending,
-		"Recent":  recent,
+		"AskpassPending": s.askpassStore.ListPending(),
+		"Pending":        pending,
+		"Recent":         recent,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

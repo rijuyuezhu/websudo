@@ -360,11 +360,117 @@ func TestGetRequestExpiresStalePendingRequest(t *testing.T) {
 	}
 }
 
+func TestAskpassCreateGetCompleteAndConsume(t *testing.T) {
+	store := newAskpassStoreForTest(func() time.Time { return time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC) }, func() string { return "askpass-http" })
+	srv := NewServer(Dependencies{AskpassStore: store, Templates: testTemplates(t)})
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/askpass", strings.NewReader(`{"prompt":"Password:"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createW := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(createW, createReq)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d", createW.Code, http.StatusCreated)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/askpass/askpass-http", nil)
+	getW := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want %d", getW.Code, http.StatusOK)
+	}
+	if strings.Contains(getW.Body.String(), "secret") {
+		t.Fatalf("GET leaked password: %q", getW.Body.String())
+	}
+
+	completeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-http/complete", strings.NewReader(`{"password":"secret"}`))
+	completeReq.Header.Set("Content-Type", "application/json")
+	completeW := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(completeW, completeReq)
+	if completeW.Code != http.StatusAccepted {
+		t.Fatalf("complete status = %d, want %d", completeW.Code, http.StatusAccepted)
+	}
+	if strings.Contains(completeW.Body.String(), "secret") {
+		t.Fatalf("complete echoed password: %q", completeW.Body.String())
+	}
+
+	consumeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-http/consume", nil)
+	consumeW := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(consumeW, consumeReq)
+	if consumeW.Code != http.StatusOK {
+		t.Fatalf("consume status = %d, want %d", consumeW.Code, http.StatusOK)
+	}
+	var payload map[string]string
+	if err := json.Unmarshal(consumeW.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if payload["password"] != "secret" {
+		t.Fatalf("password = %q, want secret", payload["password"])
+	}
+
+	secondConsume := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(secondConsume, consumeReq.Clone(context.Background()))
+	if secondConsume.Code != http.StatusNotFound {
+		t.Fatalf("second consume status = %d, want %d", secondConsume.Code, http.StatusNotFound)
+	}
+}
+
+func TestAskpassDenyAndPendingConsumeStatus(t *testing.T) {
+	ids := []string{"askpass-pending", "askpass-deny"}
+	store := newAskpassStoreForTest(func() time.Time { return time.Now().UTC() }, func() string {
+		id := ids[0]
+		ids = ids[1:]
+		return id
+	})
+	store.Create("pending")
+	store.Create("deny")
+	srv := NewServer(Dependencies{AskpassStore: store, Templates: testTemplates(t)})
+
+	pendingConsume := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(pendingConsume, httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-pending/consume", nil))
+	if pendingConsume.Code != http.StatusConflict {
+		t.Fatalf("pending consume status = %d, want %d", pendingConsume.Code, http.StatusConflict)
+	}
+
+	denyReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-deny/deny", nil)
+	denyReq.Header.Set("Content-Type", "application/json")
+	denyW := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(denyW, denyReq)
+	if denyW.Code != http.StatusAccepted {
+		t.Fatalf("deny status = %d, want %d", denyW.Code, http.StatusAccepted)
+	}
+
+	deniedConsume := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(deniedConsume, httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-deny/consume", nil))
+	if deniedConsume.Code != http.StatusGone {
+		t.Fatalf("denied consume status = %d, want %d", deniedConsume.Code, http.StatusGone)
+	}
+}
+
+func TestAskpassPageRendersPasswordForm(t *testing.T) {
+	store := newAskpassStoreForTest(func() time.Time { return time.Now().UTC() }, func() string { return "askpass-page" })
+	store.Create("Password:")
+	srv := NewServer(Dependencies{AskpassStore: store})
+
+	w := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/askpass/askpass-page", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `action="/api/askpass/askpass-page/complete"`) {
+		t.Fatalf("askpass page missing complete form: %s", body)
+	}
+	if !strings.Contains(body, `type="password"`) {
+		t.Fatalf("askpass page missing password input: %s", body)
+	}
+}
+
 func testTemplates(t *testing.T) *template.Template {
 	t.Helper()
 
-	return template.Must(template.New("index.html").Parse(`{{define "index.html"}}{{range .Pending}}{{.ID}} {{.Command.ResolvedPath}}{{end}}{{end}}` +
-		`{{define "request.html"}}{{.ID}} {{.Status}} {{.RequestedBy.Username}}{{end}}`))
+	return template.Must(template.New("index.html").Parse(`{{define "index.html"}}{{range .Pending}}{{.ID}} {{.Command.ResolvedPath}}{{end}}{{range .AskpassPending}}{{.ID}} {{.Prompt}}{{end}}{{end}}` +
+		`{{define "request.html"}}{{.ID}} {{.Status}} {{.RequestedBy.Username}}{{end}}` +
+		`{{define "askpass.html"}}{{.ID}} {{.Prompt}}<form method="post" action="/api/askpass/{{.ID}}/complete"><input type="password" name="password" /></form>{{end}}`))
 }
 
 type memoryStore struct {

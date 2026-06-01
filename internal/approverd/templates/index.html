@@ -1,6 +1,17 @@
 <!doctype html>
 <html lang="en">
 <body>
+  <h1>Pending Password Prompts</h1>
+  {{range .AskpassPending}}
+  <article>
+    <h2><a href="/askpass/{{.ID}}">{{.ID}}</a></h2>
+    <p>Status: {{.Status}}</p>
+    <pre>{{.Prompt}}</pre>
+  </article>
+  {{else}}
+  <p>No pending password prompts.</p>
+  {{end}}
+
   <h1>Pending Requests</h1>
   {{range .Pending}}
   <article>
