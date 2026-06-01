@@ -1,6 +1,7 @@
 package approverd
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -91,6 +92,44 @@ func TestAskpassStoreDenyAndExpire(t *testing.T) {
 	}
 }
 
+func TestAskpassStoreConsumeReportsCurrentStatus(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	current := now.Add(time.Second)
+	ids := []string{"askpass-pending", "askpass-denied", "askpass-expired"}
+	store := newAskpassStoreForTest(func() time.Time { return current }, func() string {
+		id := ids[0]
+		ids = ids[1:]
+		return id
+	})
+
+	store.Create("pending")
+	if _, err := store.Consume("askpass-pending"); err == nil || !strings.Contains(err.Error(), string(AskpassPending)) {
+		t.Fatalf("Consume(pending) error = %v, want status %q", err, AskpassPending)
+	}
+
+	current = now
+	store.Create("denied")
+	if _, err := store.Deny("askpass-denied"); err != nil {
+		t.Fatalf("Deny() error = %v", err)
+	}
+	store.Create("expired")
+	if expired := store.ExpireBefore(now); expired != 1 {
+		t.Fatalf("expired = %d, want 1", expired)
+	}
+
+	for _, tc := range []struct {
+		id     string
+		status AskpassStatus
+	}{
+		{id: "askpass-denied", status: AskpassDenied},
+		{id: "askpass-expired", status: AskpassExpired},
+	} {
+		if _, err := store.Consume(tc.id); err == nil || !strings.Contains(err.Error(), string(tc.status)) {
+			t.Fatalf("Consume(%q) error = %v, want status %q", tc.id, err, tc.status)
+		}
+	}
+}
+
 func TestAskpassStoreListsOnlyPending(t *testing.T) {
 	ids := []string{"askpass-a", "askpass-b"}
 	store := newAskpassStoreForTest(func() time.Time { return time.Now().UTC() }, func() string {
@@ -107,5 +146,33 @@ func TestAskpassStoreListsOnlyPending(t *testing.T) {
 	pending := store.ListPending()
 	if len(pending) != 1 || pending[0].ID != "askpass-a" {
 		t.Fatalf("pending = %#v, want only askpass-a", pending)
+	}
+}
+
+func TestAskpassStoreListPendingNewestFirst(t *testing.T) {
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	now := base
+	ids := []string{"askpass-oldest", "askpass-newest", "askpass-middle"}
+	store := newAskpassStoreForTest(func() time.Time { return now }, func() string {
+		id := ids[0]
+		ids = ids[1:]
+		return id
+	})
+
+	store.Create("oldest")
+	now = base.Add(2 * time.Second)
+	store.Create("newest")
+	now = base.Add(time.Second)
+	store.Create("middle")
+
+	pending := store.ListPending()
+	if len(pending) != 3 {
+		t.Fatalf("pending len = %d, want 3", len(pending))
+	}
+	want := []string{"askpass-newest", "askpass-middle", "askpass-oldest"}
+	for i, id := range want {
+		if pending[i].ID != id {
+			t.Fatalf("pending[%d].ID = %q, want %q; pending = %#v", i, pending[i].ID, id, pending)
+		}
 	}
 }

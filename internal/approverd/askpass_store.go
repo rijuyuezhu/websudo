@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"sort"
 	"sync"
 	"time"
 )
@@ -94,6 +96,9 @@ func (s *AskpassStore) ListPending() []AskpassRequest {
 		}
 		pending = append(pending, entry.request)
 	}
+	sort.SliceStable(pending, func(i, j int) bool {
+		return pending[i].CreatedAt.After(pending[j].CreatedAt)
+	})
 	return pending
 }
 
@@ -139,7 +144,7 @@ func (s *AskpassStore) Consume(id string) (string, error) {
 		return "", errors.New("askpass request not found")
 	}
 	if entry.request.Status != AskpassCompleted {
-		return "", errors.New("askpass request is not completed")
+		return "", fmt.Errorf("askpass request is %s", entry.request.Status)
 	}
 	delete(s.items, id)
 	for i, orderedID := range s.order {
