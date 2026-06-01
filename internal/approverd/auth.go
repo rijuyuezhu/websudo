@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -41,6 +42,9 @@ func (v SudoPasswordVerifier) VerifyPassword(ctx context.Context, password strin
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	if err := run(ctx, sudoPath, []string{"-k", "-n", "-v"}, ""); err == nil {
+		return errors.New("password verification unavailable")
+	}
 	return run(ctx, sudoPath, []string{"-k", "-S", "-p", "", "-v"}, password+"\n")
 }
 
@@ -64,10 +68,20 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	if !isJSONRequest(r) {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
 	var body struct {
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&body); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	var trailing struct{}
+	if err := dec.Decode(&trailing); err != io.EOF {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
