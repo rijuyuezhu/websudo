@@ -2,10 +2,18 @@ package approverd
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 )
+
+const askpassConsumeTokenHeader = "X-Websudo-Askpass-Token"
+
+type askpassCreateResponse struct {
+	AskpassRequest
+	ConsumeToken string `json:"consumeToken"`
+}
 
 func (s *Server) handleAskpassCreate(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/api/askpass" {
@@ -29,7 +37,13 @@ func (s *Server) handleAskpassCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, s.askpassStore.Create(body.Prompt))
+	req := s.askpassStore.Create(body.Prompt)
+	consumeToken, err := s.askpassStore.ConsumeToken(req.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusCreated, askpassCreateResponse{AskpassRequest: req, ConsumeToken: consumeToken})
 }
 
 func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +96,7 @@ func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "consume":
-		password, err := s.askpassStore.Consume(id)
+		password, err := s.askpassStore.Consume(id, r.Header.Get(askpassConsumeTokenHeader))
 		if err != nil {
 			w.WriteHeader(askpassConsumeStatus(err))
 			return
@@ -167,6 +181,8 @@ func askpassWriteStatus(err error) int {
 func askpassConsumeStatus(err error) int {
 	message := err.Error()
 	switch {
+	case errors.Is(err, errInvalidAskpassConsumeToken):
+		return http.StatusForbidden
 	case strings.Contains(message, "not found"):
 		return http.StatusNotFound
 	case strings.Contains(message, string(AskpassPending)):

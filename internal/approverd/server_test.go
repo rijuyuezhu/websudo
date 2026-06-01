@@ -371,6 +371,15 @@ func TestAskpassCreateGetCompleteAndConsume(t *testing.T) {
 	if createW.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want %d", createW.Code, http.StatusCreated)
 	}
+	var createPayload struct {
+		ConsumeToken string `json:"consumeToken"`
+	}
+	if err := json.Unmarshal(createW.Body.Bytes(), &createPayload); err != nil {
+		t.Fatalf("Unmarshal(create) error = %v", err)
+	}
+	if createPayload.ConsumeToken == "" {
+		t.Fatal("consume token is empty")
+	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/askpass/askpass-http", nil)
 	getW := httptest.NewRecorder()
@@ -380,6 +389,9 @@ func TestAskpassCreateGetCompleteAndConsume(t *testing.T) {
 	}
 	if strings.Contains(getW.Body.String(), "secret") {
 		t.Fatalf("GET leaked password: %q", getW.Body.String())
+	}
+	if strings.Contains(getW.Body.String(), createPayload.ConsumeToken) || strings.Contains(getW.Body.String(), "consumeToken") {
+		t.Fatalf("GET leaked consume token: %q", getW.Body.String())
 	}
 
 	completeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-http/complete", strings.NewReader(`{"password":"secret"}`))
@@ -394,6 +406,7 @@ func TestAskpassCreateGetCompleteAndConsume(t *testing.T) {
 	}
 
 	consumeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-http/consume", nil)
+	consumeReq.Header.Set("X-Websudo-Askpass-Token", createPayload.ConsumeToken)
 	consumeW := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(consumeW, consumeReq)
 	if consumeW.Code != http.StatusOK {
@@ -414,6 +427,106 @@ func TestAskpassCreateGetCompleteAndConsume(t *testing.T) {
 	}
 }
 
+func TestAskpassConsumeRequiresTokenAndDoesNotConsumeOnFailure(t *testing.T) {
+	store := newAskpassStoreForTest(func() time.Time { return time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC) }, func() string { return "askpass-token-http" })
+	srv := NewServer(Dependencies{AskpassStore: store, Templates: testTemplates(t)})
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/askpass", strings.NewReader(`{"prompt":"Password:"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createW := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(createW, createReq)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d", createW.Code, http.StatusCreated)
+	}
+	var createPayload struct {
+		ConsumeToken string `json:"consumeToken"`
+	}
+	if err := json.Unmarshal(createW.Body.Bytes(), &createPayload); err != nil {
+		t.Fatalf("Unmarshal(create) error = %v", err)
+	}
+
+	completeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-token-http/complete", strings.NewReader(`{"password":"secret"}`))
+	completeReq.Header.Set("Content-Type", "application/json")
+	completeW := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(completeW, completeReq)
+	if completeW.Code != http.StatusAccepted {
+		t.Fatalf("complete status = %d, want %d", completeW.Code, http.StatusAccepted)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		token string
+	}{
+		{name: "missing"},
+		{name: "wrong", token: "wrong"},
+	} {
+		consumeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-token-http/consume", nil)
+		if tc.token != "" {
+			consumeReq.Header.Set("X-Websudo-Askpass-Token", tc.token)
+		}
+		consumeW := httptest.NewRecorder()
+		srv.Routes().ServeHTTP(consumeW, consumeReq)
+		if consumeW.Code != http.StatusForbidden {
+			t.Fatalf("%s token consume status = %d, want %d", tc.name, consumeW.Code, http.StatusForbidden)
+		}
+		if strings.Contains(consumeW.Body.String(), "secret") {
+			t.Fatalf("%s token consume leaked password: %q", tc.name, consumeW.Body.String())
+		}
+	}
+
+	consumeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-token-http/consume", nil)
+	consumeReq.Header.Set("X-Websudo-Askpass-Token", createPayload.ConsumeToken)
+	consumeW := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(consumeW, consumeReq)
+	if consumeW.Code != http.StatusOK {
+		t.Fatalf("valid token consume status = %d, want %d", consumeW.Code, http.StatusOK)
+	}
+	if !strings.Contains(consumeW.Body.String(), "secret") {
+		t.Fatalf("valid token consume response = %q, want password", consumeW.Body.String())
+	}
+}
+
+func TestAskpassConsumeTokenOnlyReturnedOnCreate(t *testing.T) {
+	store := newAskpassStoreForTest(func() time.Time { return time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC) }, func() string { return "askpass-token-visibility" })
+	srv := NewServer(Dependencies{AskpassStore: store, Templates: testTemplates(t)})
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/askpass", strings.NewReader(`{"prompt":"Password:"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createW := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(createW, createReq)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d", createW.Code, http.StatusCreated)
+	}
+	var createPayload struct {
+		ConsumeToken string `json:"consumeToken"`
+	}
+	if err := json.Unmarshal(createW.Body.Bytes(), &createPayload); err != nil {
+		t.Fatalf("Unmarshal(create) error = %v", err)
+	}
+	if createPayload.ConsumeToken == "" {
+		t.Fatal("consume token is empty")
+	}
+
+	for _, tc := range []struct {
+		name string
+		req  *http.Request
+	}{
+		{name: "status", req: httptest.NewRequest(http.MethodGet, "/api/askpass/askpass-token-visibility", nil)},
+		{name: "page", req: httptest.NewRequest(http.MethodGet, "/askpass/askpass-token-visibility", nil)},
+		{name: "index", req: httptest.NewRequest(http.MethodGet, "/", nil)},
+	} {
+		w := httptest.NewRecorder()
+		srv.Routes().ServeHTTP(w, tc.req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want %d", tc.name, w.Code, http.StatusOK)
+		}
+		body := w.Body.String()
+		if strings.Contains(body, createPayload.ConsumeToken) || strings.Contains(body, "consumeToken") {
+			t.Fatalf("%s leaked consume token: %q", tc.name, body)
+		}
+	}
+}
+
 func TestAskpassDenyAndPendingConsumeStatus(t *testing.T) {
 	ids := []string{"askpass-pending", "askpass-deny"}
 	store := newAskpassStoreForTest(func() time.Time { return time.Now().UTC() }, func() string {
@@ -423,10 +536,20 @@ func TestAskpassDenyAndPendingConsumeStatus(t *testing.T) {
 	})
 	store.Create("pending")
 	store.Create("deny")
+	pendingToken, err := store.ConsumeToken("askpass-pending")
+	if err != nil {
+		t.Fatalf("ConsumeToken(pending) error = %v", err)
+	}
+	denyToken, err := store.ConsumeToken("askpass-deny")
+	if err != nil {
+		t.Fatalf("ConsumeToken(deny) error = %v", err)
+	}
 	srv := NewServer(Dependencies{AskpassStore: store, Templates: testTemplates(t)})
 
 	pendingConsume := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(pendingConsume, httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-pending/consume", nil))
+	pendingConsumeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-pending/consume", nil)
+	pendingConsumeReq.Header.Set("X-Websudo-Askpass-Token", pendingToken)
+	srv.Routes().ServeHTTP(pendingConsume, pendingConsumeReq)
 	if pendingConsume.Code != http.StatusConflict {
 		t.Fatalf("pending consume status = %d, want %d", pendingConsume.Code, http.StatusConflict)
 	}
@@ -440,7 +563,9 @@ func TestAskpassDenyAndPendingConsumeStatus(t *testing.T) {
 	}
 
 	deniedConsume := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(deniedConsume, httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-deny/consume", nil))
+	deniedConsumeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-deny/consume", nil)
+	deniedConsumeReq.Header.Set("X-Websudo-Askpass-Token", denyToken)
+	srv.Routes().ServeHTTP(deniedConsume, deniedConsumeReq)
 	if deniedConsume.Code != http.StatusGone {
 		t.Fatalf("denied consume status = %d, want %d", deniedConsume.Code, http.StatusGone)
 	}
