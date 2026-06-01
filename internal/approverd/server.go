@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"html/template"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -387,7 +388,8 @@ func approvalToken(r *http.Request) (string, error) {
 }
 
 func isJSONRequest(r *http.Request) bool {
-	return strings.HasPrefix(r.Header.Get("Content-Type"), "application/json")
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return err == nil && mediaType == "application/json"
 }
 
 func (s *Server) expirePendingRequests() error {

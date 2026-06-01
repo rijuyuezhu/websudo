@@ -105,6 +105,27 @@ func TestLoginRequiresJSONContentType(t *testing.T) {
 	}
 }
 
+func TestLoginRejectsJSONPrefixContentType(t *testing.T) {
+	verifier := &fakePasswordVerifier{wantPassword: "machine-secret"}
+	srv := NewServer(Dependencies{PasswordVerifier: verifier})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(`{"password":"machine-secret"}`))
+	req.Header.Set("Content-Type", "application/jsonp")
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnsupportedMediaType)
+	}
+	if verifier.called {
+		t.Fatal("password verifier should not be called for JSON-prefix media type")
+	}
+	if len(w.Result().Cookies()) != 0 {
+		t.Fatalf("JSON-prefix media type set cookies: %#v", w.Result().Cookies())
+	}
+}
+
 func TestLoginRejectsTrailingJSON(t *testing.T) {
 	verifier := &fakePasswordVerifier{wantPassword: "machine-secret"}
 	srv := NewServer(Dependencies{PasswordVerifier: verifier})
