@@ -94,6 +94,33 @@ func TestClientWaitForPasswordForbiddenReturnsError(t *testing.T) {
 	}
 }
 
+func TestClientWaitForPasswordNotFoundReturnsTerminalError(t *testing.T) {
+	consumeCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/askpass/askpass-missing/consume" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("X-Websudo-Askpass-Token") != "token-4" {
+			t.Fatalf("consume token = %q", r.Header.Get("X-Websudo-Askpass-Token"))
+		}
+		consumeCalls++
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	client := New(server.URL, server.Client())
+	client.pollInterval = time.Millisecond
+	_, err := client.WaitForPassword(ctx, Request{ID: "askpass-missing", ConsumeToken: "token-4"})
+	if err == nil {
+		t.Fatal("WaitForPassword() error = nil, want not found error")
+	}
+	if consumeCalls != 1 {
+		t.Fatalf("consumeCalls = %d, want 1", consumeCalls)
+	}
+}
+
 func TestClientCreateServiceUnavailableReturnsError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/askpass" {
