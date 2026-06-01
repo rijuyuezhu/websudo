@@ -45,7 +45,7 @@ func TestWebsudoEndToEndCreateApproveExecuteAndReplay(t *testing.T) {
 	}()
 
 	requestID := waitForPendingRequest(t, stack.store)
-	approveRequest(t, stack.approverdURL, stack.httpClient, requestID, "123456")
+	approveRequest(t, stack.approverdURL, stack.httpClient, requestID, stack.sessionCookie)
 
 	select {
 	case result := <-results:
@@ -89,7 +89,7 @@ func TestWebsudoValidateCachesPerTTY(t *testing.T) {
 	}()
 
 	requestID := waitForPendingRequest(t, stack.store)
-	approveRequest(t, stack.approverdURL, stack.httpClient, requestID, "123456")
+	approveRequest(t, stack.approverdURL, stack.httpClient, requestID, stack.sessionCookie)
 
 	select {
 	case err := <-validated:
@@ -118,11 +118,12 @@ func TestWebsudoValidateCachesPerTTY(t *testing.T) {
 }
 
 type testStack struct {
-	approverdURL string
-	httpClient   *http.Client
-	store        *store.SQLiteStore
-	listener     net.Listener
-	server       *httptest.Server
+	approverdURL  string
+	httpClient    *http.Client
+	store         *store.SQLiteStore
+	listener      net.Listener
+	server        *httptest.Server
+	sessionCookie *http.Cookie
 }
 
 func startTestStack(t *testing.T) (testStack, func()) {
@@ -143,22 +144,54 @@ func startTestStack(t *testing.T) (testStack, func()) {
 	}()
 
 	srv := approverd.NewServer(approverd.Dependencies{
-		Config: config.Config{TokenHashHex: config.MustHashToken("123456"), RootSocketPath: socketPath, RootAllowedUID: os.Getuid()},
-		Store:  approverd.NewSQLiteStore(sqliteStore),
+		Config:           config.Config{TokenHashHex: config.MustHashToken("123456"), RootSocketPath: socketPath, RootAllowedUID: os.Getuid()},
+		Store:            approverd.NewSQLiteStore(sqliteStore),
+		PasswordVerifier: acceptPasswordVerifier{},
 	})
 	httpServer := httptest.NewServer(srv.Routes())
+	sessionCookie := loginBrowserSession(t, httpServer)
 
 	return testStack{
-			approverdURL: httpServer.URL,
-			httpClient:   httpServer.Client(),
-			store:        sqliteStore,
-			listener:     listener,
-			server:       httpServer,
+			approverdURL:  httpServer.URL,
+			httpClient:    httpServer.Client(),
+			store:         sqliteStore,
+			listener:      listener,
+			server:        httpServer,
+			sessionCookie: sessionCookie,
 		}, func() {
 			httpServer.Close()
 			_ = listener.Close()
 			_ = sqliteStore.Close()
 		}
+}
+
+type acceptPasswordVerifier struct{}
+
+func (acceptPasswordVerifier) VerifyPassword(context.Context, string) error {
+	return nil
+}
+
+func loginBrowserSession(t *testing.T, httpServer *httptest.Server) *http.Cookie {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPost, httpServer.URL+"/api/login", strings.NewReader(`{"password":"test"}`))
+	if err != nil {
+		t.Fatalf("http.NewRequest(login) error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := httpServer.Client().Do(req)
+	if err != nil {
+		t.Fatalf("login Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	cookies := resp.Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("login did not set a session cookie")
+	}
+	return cookies[0]
 }
 
 func waitForPendingRequest(t *testing.T, sqliteStore *store.SQLiteStore) string {
@@ -179,14 +212,15 @@ func waitForPendingRequest(t *testing.T, sqliteStore *store.SQLiteStore) string 
 	return ""
 }
 
-func approveRequest(t *testing.T, baseURL string, httpClient *http.Client, requestID, token string) {
+func approveRequest(t *testing.T, baseURL string, httpClient *http.Client, requestID string, sessionCookie *http.Cookie) {
 	t.Helper()
 
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/requests/"+requestID+"/approve", strings.NewReader(`{"token":"`+token+`"}`))
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/requests/"+requestID+"/approve", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatalf("http.NewRequest() error = %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(sessionCookie)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		t.Fatalf("Do() error = %v", err)

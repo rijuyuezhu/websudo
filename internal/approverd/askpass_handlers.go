@@ -54,6 +54,9 @@ func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
 	s.expireAskpassRequests()
 
 	if r.Method == http.MethodGet {
+		if !s.requireSession(w, r) {
+			return
+		}
 		id, ok := requestIDFromPath(r.URL.Path, "/api/askpass/")
 		if !ok {
 			http.NotFound(w, r)
@@ -79,6 +82,20 @@ func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if action == "consume" {
+		password, err := s.askpassStore.Consume(id, r.Header.Get(askpassConsumeTokenHeader))
+		if err != nil {
+			w.WriteHeader(askpassConsumeStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"password": password})
+		return
+	}
+
+	if !s.requireSession(w, r) {
+		return
+	}
+
 	switch action {
 	case "complete":
 		password, err := askpassPassword(r)
@@ -95,14 +112,6 @@ func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(askpassWriteStatus(err))
 			return
 		}
-	case "consume":
-		password, err := s.askpassStore.Consume(id, r.Header.Get(askpassConsumeTokenHeader))
-		if err != nil {
-			w.WriteHeader(askpassConsumeStatus(err))
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"password": password})
-		return
 	default:
 		http.NotFound(w, r)
 		return

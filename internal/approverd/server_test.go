@@ -22,7 +22,7 @@ func TestSQLiteStoreAdapterImplementsApproverdStore(t *testing.T) {
 	}
 }
 
-func TestApproveHandlerRequiresValidToken(t *testing.T) {
+func TestApproveHandlerIgnoresTokenWithoutSession(t *testing.T) {
 	srv := NewServer(Dependencies{
 		Config: config.Config{TokenHashHex: config.MustHashToken("123456")},
 		Store: newMemoryStore([]model.Request{
@@ -42,12 +42,12 @@ func TestApproveHandlerRequiresValidToken(t *testing.T) {
 
 	srv.Routes().ServeHTTP(w, req)
 
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", w.Code)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
 	}
 }
 
-func TestDenyHandlerRequiresValidToken(t *testing.T) {
+func TestDenyHandlerIgnoresTokenWithoutSession(t *testing.T) {
 	store := newMemoryStore([]model.Request{
 		model.NewRequest(
 			"req-2",
@@ -68,8 +68,8 @@ func TestDenyHandlerRequiresValidToken(t *testing.T) {
 
 	srv.Routes().ServeHTTP(w, req)
 
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", w.Code)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
 	}
 	stored, err := store.GetRequest("req-2")
 	if err != nil {
@@ -80,7 +80,7 @@ func TestDenyHandlerRequiresValidToken(t *testing.T) {
 	}
 }
 
-func TestRequestPageIncludesTokenFieldForDenyAction(t *testing.T) {
+func TestRequestPageShowsRequestDetails(t *testing.T) {
 	srv := NewServer(Dependencies{
 		Store: newMemoryStore([]model.Request{
 			model.NewRequest(
@@ -100,75 +100,65 @@ func TestRequestPageIncludesTokenFieldForDenyAction(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	body := w.Body.String()
-	if !strings.Contains(body, `<form method="post" action="/api/requests/req-4/deny">`) {
-		t.Fatalf("expected deny form to be rendered")
-	}
-	if !strings.Contains(body, `<form method="post" action="/api/requests/req-4/deny">
-    <label>Token <input name="token" /></label>
-    <button type="submit">Deny</button>
-  </form>`) {
-		t.Fatalf("expected deny flow to render a token input")
-	}
-	if !strings.Contains(body, `<a href="/">Back</a>`) {
-		t.Fatalf("expected request page to include a back link to root")
+	if !strings.Contains(w.Body.String(), "req-4") {
+		t.Fatalf("expected request details to be rendered")
 	}
 }
 
-func TestApproveFormRedirectsBackToRoot(t *testing.T) {
+func TestApproveJSONWithSessionReturnsAccepted(t *testing.T) {
+	now := time.Date(2026, 4, 12, 7, 30, 0, 0, time.UTC)
 	store := newMemoryStore([]model.Request{
 		model.NewRequest(
 			"req-form-approve",
-			time.Date(2026, 4, 12, 7, 30, 0, 0, time.UTC),
+			now,
 			model.Requester{Username: "rijuyuezhu"},
 			model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
 		),
 	})
 	srv := NewServer(Dependencies{
-		Config:   config.Config{TokenHashHex: config.MustHashToken("123456")},
-		Store:    store,
-		Executor: fakeExecutor{result: model.Result{ExitCode: 0}},
+		Config:       config.Config{TokenHashHex: config.MustHashToken("123456")},
+		Store:        store,
+		Executor:     fakeExecutor{result: model.Result{ExitCode: 0}},
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-form-approve", nil }),
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-form-approve/approve", strings.NewReader("token=123456"))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-form-approve/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	addSessionCookie(t, srv, req)
 	w := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(w, req)
 
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusSeeOther)
-	}
-	if location := w.Header().Get("Location"); location != "/" {
-		t.Fatalf("location = %q, want %q", location, "/")
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusAccepted)
 	}
 }
 
-func TestDenyFormRedirectsBackToRoot(t *testing.T) {
+func TestDenyJSONWithSessionReturnsAccepted(t *testing.T) {
+	now := time.Date(2026, 4, 12, 7, 31, 0, 0, time.UTC)
 	store := newMemoryStore([]model.Request{
 		model.NewRequest(
 			"req-form-deny",
-			time.Date(2026, 4, 12, 7, 31, 0, 0, time.UTC),
+			now,
 			model.Requester{Username: "rijuyuezhu"},
 			model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
 		),
 	})
 	srv := NewServer(Dependencies{
-		Config: config.Config{TokenHashHex: config.MustHashToken("123456")},
-		Store:  store,
+		Config:       config.Config{TokenHashHex: config.MustHashToken("123456")},
+		Store:        store,
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-form-deny", nil }),
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-form-deny/deny", strings.NewReader("token=123456"))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-form-deny/deny", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	addSessionCookie(t, srv, req)
 	w := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(w, req)
 
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusSeeOther)
-	}
-	if location := w.Header().Get("Location"); location != "/" {
-		t.Fatalf("location = %q, want %q", location, "/")
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusAccepted)
 	}
 }
 
@@ -270,10 +260,11 @@ func TestCreateRequestAPIIgnoresForgedLifecycleFields(t *testing.T) {
 }
 
 func TestApproveHandlerExecutesRequestAndStoresResult(t *testing.T) {
+	now := time.Date(2026, 4, 12, 7, 0, 0, 0, time.UTC)
 	store := newMemoryStore([]model.Request{
 		model.NewRequest(
 			"req-exec",
-			time.Date(2026, 4, 12, 7, 0, 0, 0, time.UTC),
+			now,
 			model.Requester{Username: "rijuyuezhu"},
 			model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
 		),
@@ -283,10 +274,14 @@ func TestApproveHandlerExecutesRequestAndStoresResult(t *testing.T) {
 		Store:     store,
 		Templates: testTemplates(t),
 		Executor:  fakeExecutor{result: model.Result{ExitCode: 0, Stdout: "ok"}},
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) {
+			return "session-exec", nil
+		}),
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-exec/approve", strings.NewReader(`{"token":"123456"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-exec/approve", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
+	addSessionCookie(t, srv, req)
 	w := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(w, req)
@@ -361,8 +356,15 @@ func TestGetRequestExpiresStalePendingRequest(t *testing.T) {
 }
 
 func TestAskpassCreateGetCompleteAndConsume(t *testing.T) {
-	store := newAskpassStoreForTest(func() time.Time { return time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC) }, func() string { return "askpass-http" })
-	srv := NewServer(Dependencies{AskpassStore: store, Templates: testTemplates(t)})
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-http" })
+	srv := NewServer(Dependencies{
+		AskpassStore: store,
+		Templates:    testTemplates(t),
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) {
+			return "session-askpass-http", nil
+		}),
+	})
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/askpass", strings.NewReader(`{"prompt":"Password:"}`))
 	createReq.Header.Set("Content-Type", "application/json")
@@ -382,6 +384,7 @@ func TestAskpassCreateGetCompleteAndConsume(t *testing.T) {
 	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/askpass/askpass-http", nil)
+	addSessionCookie(t, srv, getReq)
 	getW := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(getW, getReq)
 	if getW.Code != http.StatusOK {
@@ -396,6 +399,7 @@ func TestAskpassCreateGetCompleteAndConsume(t *testing.T) {
 
 	completeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-http/complete", strings.NewReader(`{"password":"secret"}`))
 	completeReq.Header.Set("Content-Type", "application/json")
+	addSessionCookie(t, srv, completeReq)
 	completeW := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(completeW, completeReq)
 	if completeW.Code != http.StatusAccepted {
@@ -428,8 +432,15 @@ func TestAskpassCreateGetCompleteAndConsume(t *testing.T) {
 }
 
 func TestAskpassConsumeRequiresTokenAndDoesNotConsumeOnFailure(t *testing.T) {
-	store := newAskpassStoreForTest(func() time.Time { return time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC) }, func() string { return "askpass-token-http" })
-	srv := NewServer(Dependencies{AskpassStore: store, Templates: testTemplates(t)})
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-token-http" })
+	srv := NewServer(Dependencies{
+		AskpassStore: store,
+		Templates:    testTemplates(t),
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) {
+			return "session-askpass-token-http", nil
+		}),
+	})
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/askpass", strings.NewReader(`{"prompt":"Password:"}`))
 	createReq.Header.Set("Content-Type", "application/json")
@@ -447,6 +458,7 @@ func TestAskpassConsumeRequiresTokenAndDoesNotConsumeOnFailure(t *testing.T) {
 
 	completeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-token-http/complete", strings.NewReader(`{"password":"secret"}`))
 	completeReq.Header.Set("Content-Type", "application/json")
+	addSessionCookie(t, srv, completeReq)
 	completeW := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(completeW, completeReq)
 	if completeW.Code != http.StatusAccepted {
@@ -487,8 +499,15 @@ func TestAskpassConsumeRequiresTokenAndDoesNotConsumeOnFailure(t *testing.T) {
 }
 
 func TestAskpassConsumeTokenOnlyReturnedOnCreate(t *testing.T) {
-	store := newAskpassStoreForTest(func() time.Time { return time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC) }, func() string { return "askpass-token-visibility" })
-	srv := NewServer(Dependencies{AskpassStore: store, Templates: testTemplates(t)})
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-token-visibility" })
+	srv := NewServer(Dependencies{
+		AskpassStore: store,
+		Templates:    testTemplates(t),
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) {
+			return "session-askpass-token-visibility", nil
+		}),
+	})
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/askpass", strings.NewReader(`{"prompt":"Password:"}`))
 	createReq.Header.Set("Content-Type", "application/json")
@@ -515,6 +534,9 @@ func TestAskpassConsumeTokenOnlyReturnedOnCreate(t *testing.T) {
 		{name: "page", req: httptest.NewRequest(http.MethodGet, "/askpass/askpass-token-visibility", nil)},
 		{name: "index", req: httptest.NewRequest(http.MethodGet, "/", nil)},
 	} {
+		if tc.name == "status" {
+			addSessionCookie(t, srv, tc.req)
+		}
 		w := httptest.NewRecorder()
 		srv.Routes().ServeHTTP(w, tc.req)
 		if w.Code != http.StatusOK {
@@ -559,6 +581,7 @@ func TestAskpassServerConfiguresCompletedExpirationTimeout(t *testing.T) {
 }
 
 func TestAskpassDenyAndPendingConsumeStatus(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	ids := []string{"askpass-pending", "askpass-deny"}
 	store := newAskpassStoreForTest(func() time.Time { return time.Now().UTC() }, func() string {
 		id := ids[0]
@@ -575,7 +598,13 @@ func TestAskpassDenyAndPendingConsumeStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConsumeToken(deny) error = %v", err)
 	}
-	srv := NewServer(Dependencies{AskpassStore: store, Templates: testTemplates(t)})
+	srv := NewServer(Dependencies{
+		AskpassStore: store,
+		Templates:    testTemplates(t),
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) {
+			return "session-askpass-deny", nil
+		}),
+	})
 
 	pendingConsume := httptest.NewRecorder()
 	pendingConsumeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-pending/consume", nil)
@@ -587,6 +616,7 @@ func TestAskpassDenyAndPendingConsumeStatus(t *testing.T) {
 
 	denyReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-deny/deny", nil)
 	denyReq.Header.Set("Content-Type", "application/json")
+	addSessionCookie(t, srv, denyReq)
 	denyW := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(denyW, denyReq)
 	if denyW.Code != http.StatusAccepted {
@@ -758,4 +788,175 @@ func (s *memoryStore) DenyRequest(id string) (model.Request, error) {
 	}
 	s.requests[id] = next
 	return next, nil
+}
+
+func TestDashboardRequiresSession(t *testing.T) {
+	srv := NewServer(Dependencies{
+		Store:        newMemoryStore(nil),
+		AskpassStore: newAskpassStoreForTest(time.Now, func() string { return "askpass-dashboard" }),
+	})
+
+	w := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/dashboard", nil))
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestDashboardReturnsListsWithSession(t *testing.T) {
+	now := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	askpassStore := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-dashboard" })
+	askpassStore.Create("Password:")
+	srv := NewServer(Dependencies{
+		Store: newMemoryStore([]model.Request{
+			model.NewRequest("req-dashboard", now, model.Requester{Username: "rijuyuezhu"}, model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"}),
+		}),
+		AskpassStore: askpassStore,
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-dashboard", nil }),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	addSessionCookie(t, srv, req)
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "askpass-dashboard") || !strings.Contains(body, "req-dashboard") {
+		t.Fatalf("dashboard response missing expected ids: %s", body)
+	}
+}
+
+func TestBrowserRequestDetailRequiresSession(t *testing.T) {
+	srv := NewServer(Dependencies{
+		Store: newMemoryStore([]model.Request{
+			model.NewRequest("req-browser-detail", time.Now().UTC(), model.Requester{Username: "rijuyuezhu"}, model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"}),
+		}),
+	})
+
+	w := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/browser/requests/req-browser-detail", nil))
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestBrowserRequestDetailReturnsRequestWithSession(t *testing.T) {
+	now := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	srv := NewServer(Dependencies{
+		Store: newMemoryStore([]model.Request{
+			model.NewRequest("req-browser-detail", now, model.Requester{Username: "rijuyuezhu"}, model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"}),
+		}),
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-browser-detail", nil }),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/browser/requests/req-browser-detail", nil)
+	addSessionCookie(t, srv, req)
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if !strings.Contains(w.Body.String(), "req-browser-detail") {
+		t.Fatalf("response missing request id: %s", w.Body.String())
+	}
+}
+
+func TestApproveActionRequiresSession(t *testing.T) {
+	srv := NewServer(Dependencies{
+		Store: newMemoryStore([]model.Request{
+			model.NewRequest("req-no-session", time.Now().UTC(), model.Requester{Username: "rijuyuezhu"}, model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"}),
+		}),
+		Executor: fakeExecutor{result: model.Result{ExitCode: 0}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-no-session/approve", nil)
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestApproveActionUsesSessionWithoutToken(t *testing.T) {
+	now := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	store := newMemoryStore([]model.Request{
+		model.NewRequest("req-session-approve", now, model.Requester{Username: "rijuyuezhu"}, model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"}),
+	})
+	srv := NewServer(Dependencies{
+		Store:        store,
+		Executor:     fakeExecutor{result: model.Result{ExitCode: 0}},
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-approve", nil }),
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-session-approve/approve", nil)
+	addSessionCookie(t, srv, req)
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusAccepted)
+	}
+	stored, err := store.GetRequest("req-session-approve")
+	if err != nil {
+		t.Fatalf("GetRequest() error = %v", err)
+	}
+	if stored.Status() != model.StatusSucceeded {
+		t.Fatalf("status = %q, want %q", stored.Status(), model.StatusSucceeded)
+	}
+}
+
+func TestAskpassCompleteRequiresSessionButConsumeUsesToken(t *testing.T) {
+	now := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	askpassStore := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-auth" })
+	askpassStore.newToken = func() string { return "consume-token" }
+	askpassStore.Create("Password:")
+	srv := NewServer(Dependencies{
+		AskpassStore: askpassStore,
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-askpass", nil }),
+	})
+
+	unauthComplete := httptest.NewRecorder()
+	completeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-auth/complete", strings.NewReader(`{"password":"secret"}`))
+	completeReq.Header.Set("Content-Type", "application/json")
+	srv.Routes().ServeHTTP(unauthComplete, completeReq)
+	if unauthComplete.Code != http.StatusUnauthorized {
+		t.Fatalf("complete status = %d, want %d", unauthComplete.Code, http.StatusUnauthorized)
+	}
+
+	authComplete := httptest.NewRecorder()
+	authReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-auth/complete", strings.NewReader(`{"password":"secret"}`))
+	authReq.Header.Set("Content-Type", "application/json")
+	addSessionCookie(t, srv, authReq)
+	srv.Routes().ServeHTTP(authComplete, authReq)
+	if authComplete.Code != http.StatusAccepted {
+		t.Fatalf("auth complete status = %d, want %d", authComplete.Code, http.StatusAccepted)
+	}
+
+	consume := httptest.NewRecorder()
+	consumeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-auth/consume", nil)
+	consumeReq.Header.Set(askpassConsumeTokenHeader, "consume-token")
+	srv.Routes().ServeHTTP(consume, consumeReq)
+	if consume.Code != http.StatusOK {
+		t.Fatalf("consume status = %d, want %d", consume.Code, http.StatusOK)
+	}
+	if !strings.Contains(consume.Body.String(), "secret") {
+		t.Fatalf("consume body missing password: %s", consume.Body.String())
+	}
+}
+
+func addSessionCookie(t *testing.T, srv *Server, req *http.Request) {
+	t.Helper()
+	id, _, err := srv.sessions.Create()
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: id})
 }

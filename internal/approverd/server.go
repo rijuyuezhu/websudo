@@ -143,6 +143,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/login", s.handleLogin)
 	mux.HandleFunc("/api/session", s.handleSession)
 	mux.HandleFunc("/api/logout", s.handleLogout)
+	mux.HandleFunc("/api/dashboard", s.handleDashboard)
+	mux.HandleFunc("/api/browser/requests/", s.handleBrowserRequestDetail)
 	mux.HandleFunc("/askpass/", s.handleAskpassPage)
 	mux.HandleFunc("/requests/", s.handleRequestPage)
 	mux.HandleFunc("/api/askpass", s.handleAskpassCreate)
@@ -294,16 +296,11 @@ func (s *Server) handleRequestAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := approvalToken(r)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	if !config.VerifyToken(s.config.TokenHashHex, token) {
-		w.WriteHeader(http.StatusForbidden)
+	if !s.requireSession(w, r) {
 		return
 	}
 
+	var err error
 	switch action {
 	case "approve":
 		_, err = s.store.ApproveRequest(id)
@@ -336,7 +333,7 @@ func (s *Server) handleRequestAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if isJSONRequest(r) {
+	if isJSONRequest(r) || r.Header.Get("Content-Type") == "" {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
