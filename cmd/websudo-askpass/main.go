@@ -19,11 +19,7 @@ func main() {
 
 	cfg := config.Default()
 	baseURL := "http://" + cfg.WebAddr
-	ctx := context.Background()
-	cancel := func() {}
-	if cfg.ApprovalTimeoutSeconds > 0 {
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(cfg.ApprovalTimeoutSeconds)*time.Second)
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), approvalTimeout(cfg))
 	defer cancel()
 
 	client := askpass.New(baseURL, nil)
@@ -40,4 +36,11 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Fprintln(os.Stdout, password)
+}
+
+func approvalTimeout(cfg config.Config) time.Duration {
+	if cfg.ApprovalTimeoutSeconds > 0 {
+		return time.Duration(cfg.ApprovalTimeoutSeconds) * time.Second
+	}
+	return 10 * time.Minute
 }
