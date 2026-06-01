@@ -130,3 +130,34 @@ func TestDefaultsLoadEnvironmentFileOverrides(t *testing.T) {
 		t.Fatalf("timestamp dir = %q, want %q", cfg.TimestampDir, filepath.Join(homeDir, ".websudo", "ts"))
 	}
 }
+
+func TestDefaultsExposeSudoAskpassConfig(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("WEBSUDO_ENV_FILE", filepath.Join(t.TempDir(), "missing.env"))
+	t.Setenv("WEBSUDO_SUDO_PATH", "")
+	t.Setenv("WEBSUDO_ASKPASS_PATH", "")
+
+	cfg := Default()
+
+	if cfg.SudoPath != "/usr/bin/sudo" {
+		t.Fatalf("sudo path = %q, want %q", cfg.SudoPath, "/usr/bin/sudo")
+	}
+	if cfg.AskpassPath != "" {
+		t.Fatalf("askpass path = %q, want empty default for PATH lookup", cfg.AskpassPath)
+	}
+}
+
+func TestDefaultsHonorSudoAskpassEnvironmentOverrides(t *testing.T) {
+	t.Setenv("WEBSUDO_SUDO_PATH", "/custom/sudo")
+	t.Setenv("WEBSUDO_ASKPASS_PATH", "/custom/websudo-askpass")
+
+	cfg := Default()
+
+	if cfg.SudoPath != "/custom/sudo" {
+		t.Fatalf("sudo path = %q, want %q", cfg.SudoPath, "/custom/sudo")
+	}
+	if cfg.AskpassPath != "/custom/websudo-askpass" {
+		t.Fatalf("askpass path = %q, want %q", cfg.AskpassPath, "/custom/websudo-askpass")
+	}
+}

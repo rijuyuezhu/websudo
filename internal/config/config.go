@@ -20,6 +20,8 @@ type Config struct {
 	TimestampDir           string
 	RootSocketPath         string
 	RootAllowedUID         int
+	SudoPath               string
+	AskpassPath            string
 }
 
 func Default() Config {
@@ -35,6 +37,8 @@ func Default() Config {
 		TimestampDir:           defaultTimestampDir(),
 		RootSocketPath:         rootSocketPath,
 		RootAllowedUID:         defaultRootAllowedUID(rootSocketPath),
+		SudoPath:               "/usr/bin/sudo",
+		AskpassPath:            "",
 	}
 	if value, ok := envString(fileEnv, "WEBSUDO_WEB_ADDR"); ok {
 		cfg.WebAddr = value
@@ -60,6 +64,12 @@ func Default() Config {
 	}
 	if value, ok := envInt(fileEnv, "WEBSUDO_ROOT_ALLOWED_UID"); ok {
 		cfg.RootAllowedUID = value
+	}
+	if value, ok := envString(fileEnv, "WEBSUDO_SUDO_PATH"); ok {
+		cfg.SudoPath = value
+	}
+	if value, ok := envString(fileEnv, "WEBSUDO_ASKPASS_PATH"); ok {
+		cfg.AskpassPath = value
 	}
 	return cfg
 }
