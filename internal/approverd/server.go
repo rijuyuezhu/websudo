@@ -36,19 +36,23 @@ type Executor interface {
 }
 
 type Dependencies struct {
-	Config       config.Config
-	Store        Store
-	AskpassStore *AskpassStore
-	Templates    *template.Template
-	Executor     Executor
+	Config           config.Config
+	Store            Store
+	AskpassStore     *AskpassStore
+	Templates        *template.Template
+	Executor         Executor
+	PasswordVerifier PasswordVerifier
+	SessionStore     *SessionStore
 }
 
 type Server struct {
-	config       config.Config
-	store        Store
-	askpassStore *AskpassStore
-	templates    *template.Template
-	executor     Executor
+	config           config.Config
+	store            Store
+	askpassStore     *AskpassStore
+	templates        *template.Template
+	executor         Executor
+	passwordVerifier PasswordVerifier
+	sessions         *SessionStore
 }
 
 type RootExecutor struct {
@@ -113,25 +117,38 @@ func NewServer(dep Dependencies) *Server {
 		askpassStore = NewAskpassStore()
 	}
 	askpassStore.setExpirationTimeout(time.Duration(dep.Config.ApprovalTimeoutSeconds) * time.Second)
+	passwordVerifier := dep.PasswordVerifier
+	if passwordVerifier == nil {
+		passwordVerifier = SudoPasswordVerifier{SudoPath: dep.Config.SudoPath}
+	}
+	sessions := dep.SessionStore
+	if sessions == nil {
+		sessions = NewSessionStore()
+	}
 
 	return &Server{
-		config:       dep.Config,
-		store:        dep.Store,
-		askpassStore: askpassStore,
-		templates:    templates,
-		executor:     executor,
+		config:           dep.Config,
+		store:            dep.Store,
+		askpassStore:     askpassStore,
+		templates:        templates,
+		executor:         executor,
+		passwordVerifier: passwordVerifier,
+		sessions:         sessions,
 	}
 }
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/api/login", s.handleLogin)
+	mux.HandleFunc("/api/session", s.handleSession)
+	mux.HandleFunc("/api/logout", s.handleLogout)
 	mux.HandleFunc("/askpass/", s.handleAskpassPage)
 	mux.HandleFunc("/requests/", s.handleRequestPage)
 	mux.HandleFunc("/api/askpass", s.handleAskpassCreate)
 	mux.HandleFunc("/api/askpass/", s.handleAskpassAction)
 	mux.HandleFunc("/api/requests", s.handleRequests)
 	mux.HandleFunc("/api/requests/", s.handleRequestAction)
+	mux.HandleFunc("/", s.handleIndex)
 	return mux
 }
 
