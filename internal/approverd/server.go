@@ -112,6 +112,7 @@ func NewServer(dep Dependencies) *Server {
 	if askpassStore == nil {
 		askpassStore = NewAskpassStore()
 	}
+	askpassStore.setExpirationTimeout(time.Duration(dep.Config.ApprovalTimeoutSeconds) * time.Second)
 
 	return &Server{
 		config:       dep.Config,

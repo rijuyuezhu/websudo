@@ -527,6 +527,37 @@ func TestAskpassConsumeTokenOnlyReturnedOnCreate(t *testing.T) {
 	}
 }
 
+func TestAskpassServerConfiguresCompletedExpirationTimeout(t *testing.T) {
+	current := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	store := newAskpassStoreForTest(func() time.Time { return current }, func() string { return "askpass-config-expire" })
+	store.Create("Password:")
+	token, err := store.ConsumeToken("askpass-config-expire")
+	if err != nil {
+		t.Fatalf("ConsumeToken() error = %v", err)
+	}
+	srv := NewServer(Dependencies{
+		Config:       config.Config{ApprovalTimeoutSeconds: 1},
+		AskpassStore: store,
+		Templates:    testTemplates(t),
+	})
+	if srv == nil {
+		t.Fatal("NewServer() = nil")
+	}
+
+	current = current.Add(2 * time.Second)
+	completed, err := store.Complete("askpass-config-expire", "secret")
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if completed.Status != AskpassExpired {
+		t.Fatalf("completed status = %q, want %q", completed.Status, AskpassExpired)
+	}
+
+	if _, err := store.Consume("askpass-config-expire", token); err == nil || !strings.Contains(err.Error(), string(AskpassExpired)) || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("Consume(expired configured) error = %v, want expired without password", err)
+	}
+}
+
 func TestAskpassDenyAndPendingConsumeStatus(t *testing.T) {
 	ids := []string{"askpass-pending", "askpass-deny"}
 	store := newAskpassStoreForTest(func() time.Time { return time.Now().UTC() }, func() string {

@@ -36,12 +36,13 @@ type askpassEntry struct {
 }
 
 type AskpassStore struct {
-	mu       sync.Mutex
-	now      func() time.Time
-	newID    func() string
-	newToken func() string
-	items    map[string]askpassEntry
-	order    []string
+	mu                sync.Mutex
+	now               func() time.Time
+	newID             func() string
+	newToken          func() string
+	expirationTimeout time.Duration
+	items             map[string]askpassEntry
+	order             []string
 }
 
 func NewAskpassStore() *AskpassStore {
@@ -54,6 +55,21 @@ func newAskpassStoreForTest(now func() time.Time, newID func() string) *AskpassS
 		newID:    newID,
 		newToken: randomAskpassToken,
 		items:    make(map[string]askpassEntry),
+	}
+}
+
+func (s *AskpassStore) setExpirationTimeout(timeout time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.expirationTimeout = timeout
+	if timeout <= 0 {
+		return
+	}
+	for _, entry := range s.items {
+		if entry.request.Status == AskpassCompleted {
+			s.scheduleExpirationLocked(entry.request)
+		}
 	}
 }
 
@@ -133,6 +149,8 @@ func (s *AskpassStore) Complete(id, password string) (AskpassRequest, error) {
 	entry.request.Status = AskpassCompleted
 	entry.password = password
 	s.items[id] = entry
+	s.scheduleExpirationLocked(entry.request)
+	entry = s.items[id]
 	return entry.request, nil
 }
 
@@ -195,6 +213,34 @@ func (s *AskpassStore) ExpireBefore(cutoff time.Time) int {
 		expired++
 	}
 	return expired
+}
+
+func (s *AskpassStore) scheduleExpirationLocked(req AskpassRequest) {
+	timeout := s.expirationTimeout
+	if timeout <= 0 {
+		return
+	}
+	delay := req.CreatedAt.Add(timeout).Sub(s.now().UTC())
+	if delay <= 0 {
+		s.expireCompletedLocked(req.ID, req.CreatedAt)
+		return
+	}
+	time.AfterFunc(delay, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.expireCompletedLocked(req.ID, req.CreatedAt)
+	})
+}
+
+func (s *AskpassStore) expireCompletedLocked(id string, createdAt time.Time) bool {
+	entry, ok := s.items[id]
+	if !ok || entry.request.Status != AskpassCompleted || !entry.request.CreatedAt.Equal(createdAt) {
+		return false
+	}
+	entry.request.Status = AskpassExpired
+	entry.password = ""
+	s.items[id] = entry
+	return true
 }
 
 func randomAskpassID() string {

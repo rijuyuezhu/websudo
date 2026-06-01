@@ -199,6 +199,24 @@ func TestAskpassStoreExpiresCompletedRequestsAndClearsPassword(t *testing.T) {
 	}
 }
 
+func TestAskpassStoreActivelyExpiresCompletedRequest(t *testing.T) {
+	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-active-expire" })
+	store.setExpirationTimeout(20 * time.Millisecond)
+	store.Create("Password:")
+	token, err := store.ConsumeToken("askpass-active-expire")
+	if err != nil {
+		t.Fatalf("ConsumeToken() error = %v", err)
+	}
+	if _, err := store.Complete("askpass-active-expire", "secret"); err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+
+	time.Sleep(60 * time.Millisecond)
+	if _, err := store.Consume("askpass-active-expire", token); err == nil || !strings.Contains(err.Error(), string(AskpassExpired)) || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("Consume(active expired) error = %v, want expired without password", err)
+	}
+}
+
 func TestAskpassStoreListsOnlyPending(t *testing.T) {
 	ids := []string{"askpass-a", "askpass-b"}
 	store := newAskpassStoreForTest(func() time.Time { return time.Now().UTC() }, func() string {
