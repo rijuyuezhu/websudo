@@ -21,7 +21,7 @@ If sudo's timestamp cache is fresh, no browser prompt appears. If sudo needs a p
 3. Start `build/websudo-approverd` as your user.
 4. Open `http://127.0.0.1:17878`.
 5. Log in with the current machine password. The browser session lasts up to 72 hours or until logout.
-6. Run `build/websudo -v` or `build/websudo /usr/bin/true` in a terminal.
+6. Run `WEBSUDO_ASKPASS_PATH="$PWD/build/websudo-askpass" build/websudo -v` or `WEBSUDO_ASKPASS_PATH="$PWD/build/websudo-askpass" build/websudo /usr/bin/true` in a terminal.
 7. If sudo needs a password, approve the prompt in the web UI and submit the sudo password.
 8. Use `Logout` in the web UI to clear the browser session.
 
