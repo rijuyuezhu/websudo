@@ -1,0 +1,21 @@
+{
+  "name": "websudo-ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "vue": "latest",
+    "vue-router": "latest"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "vue-tsc": "latest"
+  }
+}
