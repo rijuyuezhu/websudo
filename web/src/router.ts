@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { getSession } from './api'
 import DashboardView from './views/DashboardView.vue'
 import LoginView from './views/LoginView.vue'
 import AskpassView from './views/AskpassView.vue'
@@ -12,6 +13,18 @@ const router = createRouter({
     { path: '/askpass/:id', name: 'askpass', component: AskpassView, props: true },
     { path: '/requests/:id', name: 'request', component: RequestView, props: true },
   ],
+})
+
+router.beforeEach(async (to) => {
+  if (to.meta.public) {
+    return true
+  }
+  try {
+    await getSession()
+    return true
+  } catch {
+    return '/login'
+  }
 })
 
 export default router
