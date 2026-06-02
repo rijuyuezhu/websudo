@@ -871,6 +871,30 @@ func TestDashboardReturnsListsWithSession(t *testing.T) {
 	}
 }
 
+func TestDashboardReturnsEmptyArraysWithSession(t *testing.T) {
+	now := time.Date(2026, 6, 2, 12, 10, 0, 0, time.UTC)
+	srv := NewServer(Dependencies{
+		Store:        newMemoryStore(nil),
+		AskpassStore: newAskpassStoreForTest(func() time.Time { return now }, func() string { return "unused" }),
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-empty-dashboard", nil }),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	addSessionCookie(t, srv, req)
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	body := w.Body.String()
+	for _, want := range []string{`"askpassPending":[]`, `"pending":[]`, `"recent":[]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("dashboard response missing %s: %s", want, body)
+		}
+	}
+}
+
 func TestBrowserRequestDetailRequiresSession(t *testing.T) {
 	srv := NewServer(Dependencies{
 		Store: newMemoryStore([]model.Request{

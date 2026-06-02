@@ -30,8 +30,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	s.expireAskpassRequests()
 
-	var pending []model.Request
-	var recent []model.Request
+	pending := []model.Request{}
+	recent := []model.Request{}
 	if s.store != nil {
 		var err error
 		pending, err = s.store.ListPendingRequests()
@@ -44,6 +44,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+	}
+	if pending == nil {
+		pending = []model.Request{}
+	}
+	if recent == nil {
+		recent = []model.Request{}
 	}
 	writeJSON(w, http.StatusOK, dashboardResponse{
 		AskpassPending: s.askpassStore.ListPending(),
