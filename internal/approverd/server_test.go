@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"websudo/internal/config"
@@ -80,16 +81,9 @@ func TestDenyHandlerIgnoresTokenWithoutSession(t *testing.T) {
 	}
 }
 
-func TestRequestPageShowsRequestDetails(t *testing.T) {
+func TestRequestPageServesSPAIndex(t *testing.T) {
 	srv := NewServer(Dependencies{
-		Store: newMemoryStore([]model.Request{
-			model.NewRequest(
-				"req-4",
-				time.Date(2026, 4, 12, 5, 15, 0, 0, time.UTC),
-				model.Requester{Username: "rijuyuezhu"},
-				model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"},
-			),
-		}),
+		StaticFS: testStaticFS(),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/requests/req-4", nil)
@@ -100,8 +94,8 @@ func TestRequestPageShowsRequestDetails(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "req-4") {
-		t.Fatalf("expected request details to be rendered")
+	if !strings.Contains(w.Body.String(), `id="app"`) {
+		t.Fatalf("expected SPA index to be rendered: %s", w.Body.String())
 	}
 }
 
@@ -162,17 +156,9 @@ func TestDenyJSONWithSessionReturnsAccepted(t *testing.T) {
 	}
 }
 
-func TestPendingPageShowsQueuedRequest(t *testing.T) {
+func TestIndexServesSPAIndex(t *testing.T) {
 	srv := NewServer(Dependencies{
-		Store: newMemoryStore([]model.Request{
-			model.NewRequest(
-				"req-3",
-				time.Date(2026, 4, 12, 5, 10, 0, 0, time.UTC),
-				model.Requester{Username: "rijuyuezhu"},
-				model.Command{ResolvedPath: "/usr/bin/pacman", Argv: []string{"/usr/bin/pacman", "-Syu"}, Cwd: "/tmp"},
-			),
-		}),
-		Templates: testTemplates(t),
+		StaticFS: testStaticFS(),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -183,11 +169,8 @@ func TestPendingPageShowsQueuedRequest(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "req-3") {
-		t.Fatalf("expected pending request to be rendered")
-	}
-	if !strings.Contains(w.Body.String(), "/usr/bin/pacman") {
-		t.Fatalf("expected command path to be rendered")
+	if !strings.Contains(w.Body.String(), `id="app"`) {
+		t.Fatalf("expected SPA index to be rendered: %s", w.Body.String())
 	}
 }
 
@@ -504,6 +487,7 @@ func TestAskpassConsumeTokenOnlyReturnedOnCreate(t *testing.T) {
 	srv := NewServer(Dependencies{
 		AskpassStore: store,
 		Templates:    testTemplates(t),
+		StaticFS:     testStaticFS(),
 		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) {
 			return "session-askpass-token-visibility", nil
 		}),
@@ -632,10 +616,8 @@ func TestAskpassDenyAndPendingConsumeStatus(t *testing.T) {
 	}
 }
 
-func TestAskpassPageRendersPasswordForm(t *testing.T) {
-	store := newAskpassStoreForTest(func() time.Time { return time.Now().UTC() }, func() string { return "askpass-page" })
-	store.Create("Password:")
-	srv := NewServer(Dependencies{AskpassStore: store})
+func TestAskpassPageServesSPAIndex(t *testing.T) {
+	srv := NewServer(Dependencies{StaticFS: testStaticFS()})
 
 	w := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/askpass/askpass-page", nil))
@@ -643,11 +625,14 @@ func TestAskpassPageRendersPasswordForm(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, `action="/api/askpass/askpass-page/complete"`) {
-		t.Fatalf("askpass page missing complete form: %s", body)
+	if !strings.Contains(body, `id="app"`) {
+		t.Fatalf("expected SPA index to be rendered: %s", body)
 	}
-	if !strings.Contains(body, `type="password"`) {
-		t.Fatalf("askpass page missing password input: %s", body)
+}
+
+func testStaticFS() fstest.MapFS {
+	return fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte(`<!doctype html><div id="app"></div>`)},
 	}
 }
 
@@ -864,6 +849,22 @@ func TestBrowserRequestDetailReturnsRequestWithSession(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "req-browser-detail") {
 		t.Fatalf("response missing request id: %s", w.Body.String())
+	}
+}
+
+func TestBrowserRequestDetailWithoutStoreReturnsNotFound(t *testing.T) {
+	now := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	srv := NewServer(Dependencies{
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-no-store-detail", nil }),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/browser/requests/req-no-store", nil)
+	addSessionCookie(t, srv, req)
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }
 

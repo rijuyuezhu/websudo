@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"html/template"
+	"io/fs"
 	"mime"
 	"net/http"
 	"strings"
@@ -44,6 +45,7 @@ type Dependencies struct {
 	Executor         Executor
 	PasswordVerifier PasswordVerifier
 	SessionStore     *SessionStore
+	StaticFS         fs.FS
 }
 
 type Server struct {
@@ -54,6 +56,7 @@ type Server struct {
 	executor         Executor
 	passwordVerifier PasswordVerifier
 	sessions         *SessionStore
+	staticFS         fs.FS
 }
 
 type RootExecutor struct {
@@ -126,6 +129,10 @@ func NewServer(dep Dependencies) *Server {
 	if sessions == nil {
 		sessions = NewSessionStore()
 	}
+	staticFS := dep.StaticFS
+	if staticFS == nil {
+		staticFS = embeddedFrontendFS()
+	}
 
 	return &Server{
 		config:           dep.Config,
@@ -135,6 +142,7 @@ func NewServer(dep Dependencies) *Server {
 		executor:         executor,
 		passwordVerifier: passwordVerifier,
 		sessions:         sessions,
+		staticFS:         staticFS,
 	}
 }
 
@@ -145,13 +153,12 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/logout", s.handleLogout)
 	mux.HandleFunc("/api/dashboard", s.handleDashboard)
 	mux.HandleFunc("/api/browser/requests/", s.handleBrowserRequestDetail)
-	mux.HandleFunc("/askpass/", s.handleAskpassPage)
-	mux.HandleFunc("/requests/", s.handleRequestPage)
 	mux.HandleFunc("/api/askpass", s.handleAskpassCreate)
 	mux.HandleFunc("/api/askpass/", s.handleAskpassAction)
 	mux.HandleFunc("/api/requests", s.handleRequests)
 	mux.HandleFunc("/api/requests/", s.handleRequestAction)
-	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/api/", http.NotFound)
+	mux.HandleFunc("/", s.handleFrontend)
 	return mux
 }
 

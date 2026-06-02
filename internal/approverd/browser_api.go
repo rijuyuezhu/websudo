@@ -64,6 +64,10 @@ func (s *Server) handleBrowserRequestDetail(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if s.store == nil {
+		http.NotFound(w, r)
+		return
+	}
 	id, ok := requestIDFromPath(r.URL.Path, "/api/browser/requests/")
 	if !ok {
 		http.NotFound(w, r)
