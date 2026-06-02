@@ -40,7 +40,10 @@ export function login(password: string): Promise<SessionResponse> {
 }
 
 export function logout(): Promise<SessionResponse> {
-  return request<SessionResponse>('/api/logout', { method: 'POST' })
+  return request<SessionResponse>('/api/logout', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
 }
 
 export function getDashboard(): Promise<DashboardResponse> {

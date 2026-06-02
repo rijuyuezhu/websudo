@@ -178,7 +178,8 @@ func TestLogoutDeletesSessionAndExpiresCookie(t *testing.T) {
 	}
 	srv := NewServer(Dependencies{SessionStore: store})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/logout", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/logout", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "session-logout"})
 	w := httptest.NewRecorder()
 
@@ -193,6 +194,32 @@ func TestLogoutDeletesSessionAndExpiresCookie(t *testing.T) {
 	cookie := findCookie(t, w.Result().Cookies(), sessionCookieName)
 	if cookie.MaxAge != -1 || cookie.Value != "" {
 		t.Fatalf("expired cookie = %#v, want empty value and MaxAge -1", cookie)
+	}
+}
+
+func TestLogoutRejectsNonJSONContentType(t *testing.T) {
+	now := time.Date(2026, 6, 2, 12, 5, 0, 0, time.UTC)
+	store := newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-logout-csrf", nil })
+	if _, _, err := store.Create(); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	srv := NewServer(Dependencies{SessionStore: store})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/logout", strings.NewReader("logout=1"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "session-logout-csrf"})
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnsupportedMediaType)
+	}
+	if !store.Valid("session-logout-csrf") {
+		t.Fatal("non-JSON logout should not delete server-side session")
+	}
+	if len(w.Result().Cookies()) != 0 {
+		t.Fatalf("non-JSON logout set cookies: %#v", w.Result().Cookies())
 	}
 }
 

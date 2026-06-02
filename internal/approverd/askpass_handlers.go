@@ -95,6 +95,10 @@ func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
 	if !s.requireSession(w, r) {
 		return
 	}
+	if !isJSONRequest(r) {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
 
 	switch action {
 	case "complete":
@@ -117,11 +121,7 @@ func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if isJSONRequest(r) {
-		w.WriteHeader(http.StatusAccepted)
-		return
-	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (s *Server) handleAskpassPage(w http.ResponseWriter, r *http.Request) {

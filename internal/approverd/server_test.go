@@ -156,6 +156,35 @@ func TestDenyJSONWithSessionReturnsAccepted(t *testing.T) {
 	}
 }
 
+func TestRequestActionRejectsNonJSONWithSession(t *testing.T) {
+	now := time.Date(2026, 6, 2, 13, 0, 0, 0, time.UTC)
+	store := newMemoryStore([]model.Request{
+		model.NewRequest("req-form-csrf", now, model.Requester{Username: "rijuyuezhu"}, model.Command{ResolvedPath: "/usr/bin/true", Argv: []string{"/usr/bin/true"}, Cwd: "/tmp"}),
+	})
+	srv := NewServer(Dependencies{
+		Store:        store,
+		Executor:     fakeExecutor{result: model.Result{ExitCode: 0}},
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-request-csrf", nil }),
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-form-csrf/approve", strings.NewReader("approve=1"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	addSessionCookie(t, srv, req)
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnsupportedMediaType)
+	}
+	stored, err := store.GetRequest("req-form-csrf")
+	if err != nil {
+		t.Fatalf("GetRequest() error = %v", err)
+	}
+	if stored.Status() != model.StatusPending {
+		t.Fatalf("status = %q, want %q", stored.Status(), model.StatusPending)
+	}
+}
+
 func TestIndexServesSPAIndex(t *testing.T) {
 	srv := NewServer(Dependencies{
 		StaticFS: testStaticFS(),
@@ -616,6 +645,33 @@ func TestAskpassDenyAndPendingConsumeStatus(t *testing.T) {
 	}
 }
 
+func TestAskpassBrowserActionRejectsNonJSONWithSession(t *testing.T) {
+	now := time.Date(2026, 6, 2, 13, 5, 0, 0, time.UTC)
+	askpassStore := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-csrf" })
+	askpassStore.Create("Password:")
+	srv := NewServer(Dependencies{
+		AskpassStore: askpassStore,
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-askpass-csrf", nil }),
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-csrf/complete", strings.NewReader("password=secret"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	addSessionCookie(t, srv, req)
+	w := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnsupportedMediaType)
+	}
+	stored, err := askpassStore.Get("askpass-csrf")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if stored.Status != AskpassPending {
+		t.Fatalf("status = %q, want %q", stored.Status, AskpassPending)
+	}
+}
+
 func TestAskpassPageServesSPAIndex(t *testing.T) {
 	srv := NewServer(Dependencies{StaticFS: testStaticFS()})
 
@@ -896,7 +952,8 @@ func TestApproveActionUsesSessionWithoutToken(t *testing.T) {
 		Executor:     fakeExecutor{result: model.Result{ExitCode: 0}},
 		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-approve", nil }),
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-session-approve/approve", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/requests/req-session-approve/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
 	addSessionCookie(t, srv, req)
 	w := httptest.NewRecorder()
 

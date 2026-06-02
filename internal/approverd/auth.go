@@ -123,6 +123,10 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	if !isJSONRequest(r) {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
 	if cookie, err := r.Cookie(sessionCookieName); err == nil {
 		s.sessions.Delete(cookie.Value)
 	}

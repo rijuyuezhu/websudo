@@ -306,6 +306,10 @@ func (s *Server) handleRequestAction(w http.ResponseWriter, r *http.Request) {
 	if !s.requireSession(w, r) {
 		return
 	}
+	if !isJSONRequest(r) {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
 
 	var err error
 	switch action {
@@ -340,12 +344,7 @@ func (s *Server) handleRequestAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if isJSONRequest(r) || r.Header.Get("Content-Type") == "" {
-		w.WriteHeader(http.StatusAccepted)
-		return
-	}
-
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
