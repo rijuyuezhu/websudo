@@ -12,9 +12,8 @@
     "noEmit": true,
     "strict": true,
     "jsx": "preserve",
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     },
     "types": ["vite/client"]
   },

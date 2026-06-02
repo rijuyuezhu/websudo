@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "vue-tsc --noEmit && vite build",
-    "typecheck": "vue-tsc --noEmit"
+    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
     "vue": "latest",
