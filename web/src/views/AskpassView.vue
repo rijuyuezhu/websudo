@@ -18,6 +18,7 @@ async function load() {
   try {
     request.value = await getAskpass(props.id)
   } catch (err) {
+    password.value = ''
     if (err instanceof ApiError && err.status === 401) {
       await router.replace('/login')
       return
@@ -36,6 +37,7 @@ async function submit() {
     password.value = ''
     await router.replace('/')
   } catch (err) {
+    password.value = ''
     if (err instanceof ApiError && err.status === 401) {
       await router.replace('/login')
       return
@@ -77,7 +79,7 @@ onMounted(load)
       <span class="status">{{ request.status }}</span>
       <pre>{{ request.prompt }}</pre>
 
-      <form @submit.prevent="submit">
+      <form v-if="request.status === 'pending'" @submit.prevent="submit">
         <label class="field">
           <span>Password</span>
           <input v-model="password" type="password" autocomplete="current-password" />
@@ -87,6 +89,7 @@ onMounted(load)
           <button class="danger-button" type="button" :disabled="saving" @click="cancel">Cancel</button>
         </div>
       </form>
+      <p v-else class="muted">This password prompt is {{ request.status }}.</p>
     </template>
   </section>
 </template>
