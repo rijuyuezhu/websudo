@@ -16,11 +16,14 @@ If sudo's timestamp cache is fresh, no browser prompt appears. If sudo needs a p
 
 ## Manual Test
 
-1. Build and install `websudo`, `websudo-askpass`, and `websudo-approverd` in `PATH`.
-2. Start `websudo-approverd` as your user.
-3. Run `websudo -v` or `websudo /usr/bin/true` in a terminal.
-4. If sudo needs a password, open `http://127.0.0.1:17878` or the `/askpass/<id>` URL printed by `websudo-askpass`.
-5. Enter your system sudo password. The password is delivered once to sudo and is not stored in SQLite.
+1. Install frontend dependencies once with `npm install --prefix web`.
+2. Build the project with `just build`.
+3. Start `build/websudo-approverd` as your user.
+4. Open `http://127.0.0.1:17878`.
+5. Log in with the current machine password. The browser session lasts up to 72 hours or until logout.
+6. Run `build/websudo -v` or `build/websudo /usr/bin/true` in a terminal.
+7. If sudo needs a password, approve the prompt in the web UI and submit the sudo password.
+8. Use `Logout` in the web UI to clear the browser session.
 
 ## Legacy Root Executor
 

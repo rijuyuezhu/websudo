@@ -3,11 +3,17 @@ default:
 
 fmt:
 	go fmt ./...
+	npm --prefix web run typecheck
 
 test:
 	go test ./...
+	npm --prefix web run typecheck
 
-build:
+web-build:
+	rm -rf internal/approverd/static/app/assets internal/approverd/static/app/index.html
+	npm --prefix web run build
+
+build: web-build
 	mkdir -p build
 	go build -o build/websudo ./cmd/websudo
 	go build -o build/websudo-askpass ./cmd/websudo-askpass
@@ -16,3 +22,4 @@ build:
 
 clean:
 	rm -rf -- build
+	rm -rf -- internal/approverd/static/app/assets internal/approverd/static/app/index.html
