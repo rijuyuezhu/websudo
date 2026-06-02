@@ -51,6 +51,7 @@ async function submit() {
 async function cancel() {
   saving.value = true
   error.value = ''
+  password.value = ''
   try {
     await denyAskpass(props.id)
     await router.replace('/')
