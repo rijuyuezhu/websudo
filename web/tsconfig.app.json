@@ -12,6 +12,10 @@
     "noEmit": true,
     "strict": true,
     "jsx": "preserve",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
     "types": ["vite/client"]
   },
   "include": ["src/**/*.ts", "src/**/*.vue"]
