@@ -48,7 +48,14 @@ onMounted(refreshSession)
   <div class="app-shell">
     <header class="topbar">
       <RouterLink class="brand" to="/">websudo</RouterLink>
-      <button v-if="authenticated" class="ghost-button" type="button" @click="handleLogout">Logout</button>
+      <button
+        v-if="authenticated"
+        class="ghost-button"
+        type="button"
+        @click="handleLogout"
+      >
+        Logout
+      </button>
     </header>
 
     <main v-if="ready" class="page">

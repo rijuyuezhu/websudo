@@ -1,0 +1,12 @@
+[Unit]
+Description=websudo approval daemon
+After=default.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/websudo/websudo.env
+ExecStart=/usr/bin/websudo-approverd
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

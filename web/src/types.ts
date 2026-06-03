@@ -1,4 +1,11 @@
-export type RequestStatus = 'pending' | 'approved' | 'running' | 'succeeded' | 'failed' | 'denied' | 'expired'
+export type RequestStatus =
+  | 'pending'
+  | 'approved'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'denied'
+  | 'expired'
 
 export type AskpassStatus = 'pending' | 'completed' | 'denied' | 'expired'
 

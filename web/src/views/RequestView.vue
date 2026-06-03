@@ -23,7 +23,10 @@ async function load() {
       await router.replace('/login')
       return
     }
-    error.value = err instanceof ApiError && err.status === 404 ? 'Request not found.' : 'Unable to load request.'
+    error.value =
+      err instanceof ApiError && err.status === 404
+        ? 'Request not found.'
+        : 'Unable to load request.'
   } finally {
     loading.value = false
   }
@@ -44,7 +47,10 @@ async function act(kind: 'approve' | 'deny') {
       await router.replace('/login')
       return
     }
-    error.value = err instanceof ApiError && err.status === 409 ? 'This request is no longer pending.' : 'Unable to update request.'
+    error.value =
+      err instanceof ApiError && err.status === 409
+        ? 'This request is no longer pending.'
+        : 'Unable to update request.'
   } finally {
     saving.value = false
   }
@@ -62,20 +68,38 @@ onMounted(load)
 
     <template v-if="request">
       <span class="status">{{ request.status }}</span>
-      <p class="muted">{{ request.requestedBy.Username }} on {{ request.requestedBy.Hostname }}</p>
+      <p class="muted">
+        {{ request.requestedBy.Username }} on {{ request.requestedBy.Hostname }}
+      </p>
       <p><strong>Working directory:</strong> {{ request.command.Cwd }}</p>
       <h2>Arguments</h2>
       <pre>{{ argv }}</pre>
 
       <div v-if="request.status === 'pending'" class="actions">
-        <button class="primary-button" type="button" :disabled="saving" @click="act('approve')">Approve</button>
-        <button class="danger-button" type="button" :disabled="saving" @click="act('deny')">Deny</button>
+        <button
+          class="primary-button"
+          type="button"
+          :disabled="saving"
+          @click="act('approve')"
+        >
+          Approve
+        </button>
+        <button
+          class="danger-button"
+          type="button"
+          :disabled="saving"
+          @click="act('deny')"
+        >
+          Deny
+        </button>
       </div>
 
       <section v-if="request.result">
         <h2>Result</h2>
         <p><strong>Exit code:</strong> {{ request.result.exitCode }}</p>
-        <p v-if="request.result.signal"><strong>Signal:</strong> {{ request.result.signal }}</p>
+        <p v-if="request.result.signal">
+          <strong>Signal:</strong> {{ request.result.signal }}
+        </p>
         <h3 v-if="request.result.stdout">Stdout</h3>
         <pre v-if="request.result.stdout">{{ request.result.stdout }}</pre>
         <h3 v-if="request.result.stderr">Stderr</h3>

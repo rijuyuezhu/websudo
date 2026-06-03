@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+die() {
+	printf '%s\n' "$*" >&2
+	exit 1
+}
+
+need_cmd() {
+	if ! command -v "$1" >/dev/null 2>&1; then
+		die "Required command not found: $1"
+	fi
+}
+
+if [ "$(id -u)" -eq 0 ]; then
+	die "Do not run websudo-systemd-setup as root. Run it as the desktop user that will use websudo."
+fi
+
+need_cmd systemctl
+
+uid=$(id -u)
+username=$(id -un)
+
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+	cat >&2 <<EOF
+User systemd is not available for ${username}.
+
+Next steps:
+  1. Enable lingering so the user service manager can run:
+     sudo loginctl enable-linger ${username}
+  2. Log out and log back in, or start a new login session.
+  3. Run websudo-systemd-setup again as ${username}.
+EOF
+	exit 1
+fi
+
+systemctl --user daemon-reload
+systemctl --user enable --now websudo-approverd.service
+
+printf '%s\n' "websudo-approverd.service is enabled and running for ${username} (uid ${uid})."

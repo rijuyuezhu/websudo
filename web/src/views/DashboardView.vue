@@ -38,7 +38,10 @@ onMounted(load)
     <div>
       <p class="eyebrow">Approval queue</p>
       <h1>Local websudo requests</h1>
-      <p class="muted">Password prompts are shown first because they block the waiting sudo command.</p>
+      <p class="muted">
+        Password prompts are shown first because they block the waiting sudo
+        command.
+      </p>
     </div>
 
     <p v-if="error" class="notice error">{{ error }}</p>
@@ -47,7 +50,12 @@ onMounted(load)
     <section class="panel">
       <h2>Password Prompts</h2>
       <div v-if="askpassPending.length" class="cards">
-        <RouterLink v-for="item in askpassPending" :key="item.id" class="item-card" :to="`/askpass/${item.id}`">
+        <RouterLink
+          v-for="item in askpassPending"
+          :key="item.id"
+          class="item-card"
+          :to="`/askpass/${item.id}`"
+        >
           <span class="status">{{ item.status }}</span>
           <h3>{{ item.id }}</h3>
           <pre>{{ item.prompt }}</pre>
@@ -59,10 +67,17 @@ onMounted(load)
     <section class="panel">
       <h2>Pending Requests</h2>
       <div v-if="pending.length" class="cards">
-        <RouterLink v-for="item in pending" :key="item.id" class="item-card" :to="`/requests/${item.id}`">
+        <RouterLink
+          v-for="item in pending"
+          :key="item.id"
+          class="item-card"
+          :to="`/requests/${item.id}`"
+        >
           <span class="status">{{ item.status }}</span>
           <h3>{{ item.command.ResolvedPath }}</h3>
-          <p class="muted">{{ item.requestedBy.Username }} · {{ item.command.Cwd }}</p>
+          <p class="muted">
+            {{ item.requestedBy.Username }} · {{ item.command.Cwd }}
+          </p>
         </RouterLink>
       </div>
       <p v-else class="muted">No pending command requests.</p>
@@ -71,7 +86,12 @@ onMounted(load)
     <section class="panel">
       <h2>Recent Requests</h2>
       <div v-if="recent.length" class="cards">
-        <RouterLink v-for="item in recent" :key="item.id" class="item-card" :to="`/requests/${item.id}`">
+        <RouterLink
+          v-for="item in recent"
+          :key="item.id"
+          class="item-card"
+          :to="`/requests/${item.id}`"
+        >
           <span class="status">{{ item.status }}</span>
           <h3>{{ item.command.ResolvedPath }}</h3>
           <p class="muted">{{ item.id }}</p>

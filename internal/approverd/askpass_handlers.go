@@ -124,34 +124,6 @@ func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (s *Server) handleAskpassPage(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	if s.askpassStore == nil {
-		http.Error(w, "askpass store not configured", http.StatusInternalServerError)
-		return
-	}
-	s.expireAskpassRequests()
-
-	id, ok := requestIDFromPath(r.URL.Path, "/askpass/")
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	req, err := s.askpassStore.Get(id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.templates.ExecuteTemplate(w, "askpass.html", req); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
 func askpassActionFromPath(path string) (string, string, bool) {
 	if !strings.HasPrefix(path, "/api/askpass/") {
 		return "", "", false

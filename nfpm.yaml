@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://nfpm.goreleaser.com/schema.json
+name: websudo
+arch: ${PACKAGE_ARCH}
+platform: linux
+version: ${PACKAGE_VERSION}
+version_schema: semver
+release: ${PACKAGE_RELEASE}
+section: admin
+priority: optional
+maintainer: Rijuyuezhu <rijuyuezhu@users.noreply.github.com>
+description: Local browser askpass helper for sudo commands.
+vendor: rijuyuezhu
+homepage: https://github.com/rijuyuezhu/websudo
+license: MIT
+depends:
+  - sudo
+  - systemd
+contents:
+  - dst: /etc/websudo
+    type: dir
+    file_info:
+      mode: 0755
+  - src: ${PACKAGE_BINARY_DIR}/websudo
+    dst: /usr/bin/websudo
+    expand: true
+    file_info:
+      mode: 0755
+  - src: ${PACKAGE_BINARY_DIR}/websudo-askpass
+    dst: /usr/bin/websudo-askpass
+    expand: true
+    file_info:
+      mode: 0755
+  - src: ${PACKAGE_BINARY_DIR}/websudo-approverd
+    dst: /usr/bin/websudo-approverd
+    expand: true
+    file_info:
+      mode: 0755
+  - src: packaging/scripts/websudo-systemd-setup
+    dst: /usr/bin/websudo-systemd-setup
+    file_info:
+      mode: 0755
+  - src: LICENSE
+    dst: /usr/share/licenses/websudo/LICENSE
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/websudo-approverd.service
+    dst: /usr/lib/systemd/user/websudo-approverd.service
+    file_info:
+      mode: 0644
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
+  postremove: packaging/scripts/postremove.sh

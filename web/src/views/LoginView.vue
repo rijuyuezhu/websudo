@@ -32,15 +32,27 @@ async function submit() {
     <form class="login-card" @submit.prevent="submit">
       <p class="eyebrow">Local approval</p>
       <h1>Authorize this browser for websudo</h1>
-      <p class="muted">Enter the current machine password. Approval actions will stay unlocked in this browser for up to 72 hours.</p>
+      <p class="muted">
+        Enter the current machine password. Approval actions will stay unlocked
+        in this browser for up to 72 hours.
+      </p>
 
       <label class="field">
         <span>Password</span>
-        <input v-model="password" type="password" autocomplete="current-password" autofocus />
+        <input
+          v-model="password"
+          type="password"
+          autocomplete="current-password"
+          autofocus
+        />
       </label>
 
       <p v-if="error" class="notice error">{{ error }}</p>
-      <button class="primary-button" type="submit" :disabled="loading || password.length === 0">
+      <button
+        class="primary-button"
+        type="submit"
+        :disabled="loading || password.length === 0"
+      >
         {{ loading ? 'Checking...' : 'Login' }}
       </button>
     </form>

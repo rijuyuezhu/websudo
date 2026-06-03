@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ApiError, denyAskpass, getAskpass, submitAskpassPassword } from '../api'
+import {
+  ApiError,
+  denyAskpass,
+  getAskpass,
+  submitAskpassPassword,
+} from '../api'
 import type { AskpassRequest } from '../types'
 
 const props = defineProps<{ id: string }>()
@@ -23,7 +28,10 @@ async function load() {
       await router.replace('/login')
       return
     }
-    error.value = err instanceof ApiError && err.status === 404 ? 'Password prompt not found.' : 'Unable to load password prompt.'
+    error.value =
+      err instanceof ApiError && err.status === 404
+        ? 'Password prompt not found.'
+        : 'Unable to load password prompt.'
   } finally {
     loading.value = false
   }
@@ -42,7 +50,10 @@ async function submit() {
       await router.replace('/login')
       return
     }
-    error.value = err instanceof ApiError && err.status === 409 ? 'This prompt is no longer pending.' : 'Unable to submit password.'
+    error.value =
+      err instanceof ApiError && err.status === 409
+        ? 'This prompt is no longer pending.'
+        : 'Unable to submit password.'
   } finally {
     saving.value = false
   }
@@ -83,11 +94,28 @@ onMounted(load)
       <form v-if="request.status === 'pending'" @submit.prevent="submit">
         <label class="field">
           <span>Password</span>
-          <input v-model="password" type="password" autocomplete="current-password" />
+          <input
+            v-model="password"
+            type="password"
+            autocomplete="current-password"
+          />
         </label>
         <div class="actions">
-          <button class="primary-button" type="submit" :disabled="saving || password.length === 0">Submit Password</button>
-          <button class="danger-button" type="button" :disabled="saving" @click="cancel">Cancel</button>
+          <button
+            class="primary-button"
+            type="submit"
+            :disabled="saving || password.length === 0"
+          >
+            Submit Password
+          </button>
+          <button
+            class="danger-button"
+            type="button"
+            :disabled="saving"
+            @click="cancel"
+          >
+            Cancel
+          </button>
         </div>
       </form>
       <p v-else class="muted">This password prompt is {{ request.status }}.</p>

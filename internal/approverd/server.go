@@ -205,74 +205,6 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, storedReq)
 }
 
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	if err := s.expirePendingRequests(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	s.expireAskpassRequests()
-
-	var pending []model.Request
-	var recent []model.Request
-	if s.store != nil {
-		var err error
-		pending, err = s.store.ListPendingRequests()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		recent, err = s.store.ListRecentRequests()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.templates.ExecuteTemplate(w, "index.html", map[string]any{
-		"AskpassPending": s.askpassStore.ListPending(),
-		"Pending":        pending,
-		"Recent":         recent,
-	}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-func (s *Server) handleRequestPage(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	id, ok := requestIDFromPath(r.URL.Path, "/requests/")
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	if err := s.expirePendingRequests(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	req, err := s.store.GetRequest(id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.templates.ExecuteTemplate(w, "request.html", req); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
 func (s *Server) handleRequestAction(w http.ResponseWriter, r *http.Request) {
 	if err := s.expirePendingRequests(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -368,26 +300,6 @@ func requestActionFromPath(path string) (string, string, bool) {
 		return "", "", false
 	}
 	return parts[0], parts[1], true
-}
-
-func approvalToken(r *http.Request) (string, error) {
-	if isJSONRequest(r) {
-		var body struct {
-			Token string `json:"token"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			return "", err
-		}
-		return body.Token, nil
-	}
-
-	if err := r.ParseForm(); err != nil {
-		return "", err
-	}
-	if token := r.Form.Get("token"); token != "" {
-		return token, nil
-	}
-	return "", errors.New("missing token")
 }
 
 func isJSONRequest(r *http.Request) bool {

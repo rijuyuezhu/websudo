@@ -132,7 +132,7 @@ func (s *SQLiteStore) CompleteRequest(ctx context.Context, id string, result mod
 	if err != nil {
 		return model.Request{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	current, err := getRequest(tx, ctx, id)
 	if err != nil {
@@ -182,7 +182,7 @@ func (s *SQLiteStore) UpdateRequestStatus(ctx context.Context, id string, from, 
 	if err != nil {
 		return model.Request{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	result, err := tx.ExecContext(ctx, `
 		UPDATE requests
@@ -240,10 +240,6 @@ func parseStoredStatus(text string) (model.Status, error) {
 	default:
 		return "", fmt.Errorf("invalid stored status %q", text)
 	}
-}
-
-type rowScanner interface {
-	Scan(dest ...any) error
 }
 
 type requestQuerier interface {
