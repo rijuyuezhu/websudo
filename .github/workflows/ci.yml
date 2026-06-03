@@ -248,6 +248,7 @@ jobs:
           tarball_sha256_x86_64="$(sha256sum dist/websudo-x86_64-unknown-linux-gnu.tar.gz | cut -d ' ' -f 1)"
           tarball_sha256_aarch64="$(sha256sum dist/websudo-aarch64-unknown-linux-gnu.tar.gz | cut -d ' ' -f 1)"
           mkdir -p dist/aur
+          cp packaging/aur/websudo-bin.install dist/aur/websudo-bin.install
           while IFS= read -r line; do
             line="${line//@PKGVER@/${package_version}}"
             line="${line//@TARBALL_SHA256_X86_64@/${tarball_sha256_x86_64}}"

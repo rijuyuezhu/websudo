@@ -17,6 +17,7 @@ lint:
 test:
 	go test ./cmd/... ./internal/... ./tests/...
 	npm --prefix web run typecheck
+	sh packaging/scripts/verify-aur-package-metadata.sh
 
 web-build:
 	rm -rf internal/approverd/static/app/assets internal/approverd/static/app/index.html

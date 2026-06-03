@@ -9,6 +9,7 @@ license=('MIT')
 depends=('sudo' 'systemd')
 provides=('websudo')
 conflicts=('websudo')
+install=websudo-bin.install
 options=('!strip')
 source_x86_64=("websudo-${pkgver}-x86_64.tar.gz::${url}/releases/download/v${pkgver}/websudo-x86_64-unknown-linux-gnu.tar.gz")
 source_aarch64=("websudo-${pkgver}-aarch64.tar.gz::${url}/releases/download/v${pkgver}/websudo-aarch64-unknown-linux-gnu.tar.gz")
