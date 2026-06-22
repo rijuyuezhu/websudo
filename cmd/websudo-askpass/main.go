@@ -35,7 +35,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Fprintln(os.Stdout, password)
+	if _, err := fmt.Fprintln(os.Stdout, password); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 func approvalTimeout(cfg config.Config) time.Duration {
