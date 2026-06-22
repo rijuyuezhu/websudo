@@ -264,6 +264,8 @@ jobs:
         with:
           pkgname: websudo-bin
           pkgbuild: dist/aur/PKGBUILD
+          assets: |
+            dist/aur/websudo-bin.install
           test: true
           test_flags: --clean --cleanbuild --nodeps --noconfirm
           commit_username: ${{ secrets.AUR_USERNAME }}
