@@ -20,6 +20,10 @@ contents:
     type: dir
     file_info:
       mode: 0755
+  - src: packaging/websudo.env.example
+    dst: /etc/websudo/websudo.env.example
+    file_info:
+      mode: 0644
   - src: ${PACKAGE_BINARY_DIR}/websudo
     dst: /usr/bin/websudo
     expand: true
