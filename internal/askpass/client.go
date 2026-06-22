@@ -59,7 +59,7 @@ func (c *Client) Create(ctx context.Context, prompt string) (Request, error) {
 	if err != nil {
 		return Request{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusCreated {
 		return Request{}, fmt.Errorf("create askpass request failed: %s", resp.Status)
 	}
@@ -113,7 +113,7 @@ func (c *Client) consume(ctx context.Context, req Request) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	switch resp.StatusCode {
 	case http.StatusOK:

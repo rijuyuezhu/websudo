@@ -50,7 +50,7 @@ func readEnvironmentFile(path string) map[string]string {
 	if err != nil {
 		return nil
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	values := make(map[string]string)
 	scanner := bufio.NewScanner(file)

@@ -13,7 +13,7 @@ permissions:
 env:
   GO_VERSION: '1.22'
   NODE_VERSION: '22'
-  GOLANGCI_LINT_VERSION: v1.64.8
+  GOLANGCI_LINT_VERSION: v2.12.2
   NFPM_VERSION: v2.46.3
 
 jobs:
@@ -52,8 +52,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y curl just
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "$HOME/go/bin" "${GOLANGCI_LINT_VERSION}"
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+          version="${GOLANGCI_LINT_VERSION#v}"
+          archive="golangci-lint-${version}-linux-amd64.tar.gz"
+          curl -sSfL -o "/tmp/${archive}" "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/${archive}"
+          tar -xzf "/tmp/${archive}" -C /tmp
+          sudo install -m 0755 "/tmp/golangci-lint-${version}-linux-amd64/golangci-lint" /usr/local/bin/golangci-lint
+          golangci-lint --version
       - run: npm ci --prefix web
       - run: just lint
 
