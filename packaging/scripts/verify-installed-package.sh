@@ -14,6 +14,7 @@ expected_arch=$1
 test_uid=${WEBSUDO_TEST_UID:-1001}
 test_user=${WEBSUDO_TEST_USER:-websudo-test}
 user_unit=/usr/lib/systemd/user/websudo-approverd.service
+env_example=/etc/websudo/websudo.env.example
 
 if getent passwd "$test_user" >/dev/null 2>&1; then
 	actual_uid=$(id -u "$test_user")
@@ -49,6 +50,8 @@ esac
 printf '%s\n' "$setup_output"
 
 [ -f "$user_unit" ] || die "User unit not found: $user_unit"
+[ -f "$env_example" ] || die "Environment example not found: $env_example"
+grep -Fq 'WEBSUDO_WEB_ADDR=127.0.0.1:17878' "$env_example" || die "Environment example missing WEBSUDO_WEB_ADDR default"
 
 systemd-analyze --user verify "$user_unit"
 

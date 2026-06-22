@@ -21,6 +21,7 @@ workflow=.github/workflows/ci.yml
 [ -f "$install_script" ] || die "AUR install script not found: ${install_script}"
 
 require_contains "$pkgbuild_template" 'install=websudo-bin.install' 'AUR install hook reference'
+require_contains "$pkgbuild_template" 'packaging/websudo.env.example' 'environment example install rule'
 require_contains "$install_script" 'post_install()' 'post-install hook'
 require_contains "$install_script" 'post_upgrade()' 'post-upgrade hook'
 require_contains "$install_script" 'websudo-systemd-setup' 'systemd setup helper reminder'

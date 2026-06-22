@@ -14,6 +14,19 @@ paru --sudo websudo -Syu
 
 If sudo's timestamp cache is fresh, no browser prompt appears. If sudo needs a password, it invokes `websudo-askpass`; the helper creates a local browser prompt through `websudo-approverd` and prints the submitted password back to sudo for PAM validation.
 
+## Configuration
+
+`websudo-approverd` reads optional configuration from `/etc/websudo/websudo.env`. Packages install an example template at `/etc/websudo/websudo.env.example`.
+
+Supported variables:
+
+```env
+WEBSUDO_WEB_ADDR=127.0.0.1:17878
+WEBSUDO_APPROVAL_TIMEOUT_SECONDS=600
+WEBSUDO_SUDO_PATH=/usr/bin/sudo
+WEBSUDO_ASKPASS_PATH=
+```
+
 ## Manual Test
 
 1. Install frontend dependencies once with `npm install --prefix web`.

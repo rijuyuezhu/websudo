@@ -34,6 +34,7 @@ package() {
   cd "${srcdir}/websudo-${target}"
 
   install -dm755 "${pkgdir}/etc/websudo"
+  install -Dm644 packaging/websudo.env.example "${pkgdir}/etc/websudo/websudo.env.example"
   install -Dm755 websudo "${pkgdir}/usr/bin/websudo"
   install -Dm755 websudo-askpass "${pkgdir}/usr/bin/websudo-askpass"
   install -Dm755 websudo-approverd "${pkgdir}/usr/bin/websudo-approverd"

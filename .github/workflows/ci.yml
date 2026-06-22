@@ -152,6 +152,7 @@ jobs:
           done
           cp README.md "$archive_dir/README.md"
           cp LICENSE "$archive_dir/LICENSE"
+          cp packaging/websudo.env.example "$archive_dir/packaging/websudo.env.example"
           cp packaging/systemd/*.service "$archive_dir/packaging/systemd/"
           cp packaging/scripts/* "$archive_dir/packaging/scripts/"
           tar -czf "dist/websudo-${TARGET}.tar.gz" -C archive "websudo-${TARGET}"
