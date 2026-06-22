@@ -10,12 +10,12 @@ fmt-check:
 	npm --prefix web run format:check
 
 lint:
-	golangci-lint run ./cmd/... ./internal/... ./tests/...
+	golangci-lint run ./cmd/... ./internal/...
 	npm --prefix web run lint
 	npm --prefix web run typecheck
 
 test:
-	go test ./cmd/... ./internal/... ./tests/...
+	go test ./cmd/... ./internal/...
 	npm --prefix web run typecheck
 	sh packaging/scripts/verify-aur-package-metadata.sh
 
@@ -28,7 +28,6 @@ build: web-build
 	go build -o build/websudo ./cmd/websudo
 	go build -o build/websudo-askpass ./cmd/websudo-askpass
 	go build -o build/websudo-approverd ./cmd/websudo-approverd
-	go build -o build/websudo-rootd ./cmd/websudo-rootd
 
 clean:
 	rm -rf -- build

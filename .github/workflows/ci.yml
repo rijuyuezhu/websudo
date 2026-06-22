@@ -142,7 +142,7 @@ jobs:
           binary_dir="dist/bin-${TARGET}"
           archive_dir="archive/websudo-${TARGET}"
           mkdir -p "$binary_dir" "$archive_dir/packaging/systemd" "$archive_dir/packaging/scripts"
-          for name in websudo websudo-askpass websudo-approverd websudo-rootd; do
+          for name in websudo websudo-askpass websudo-approverd; do
             GOOS=linux GOARCH="$GOARCH" go build -trimpath -o "$binary_dir/$name" "./cmd/$name"
             cp "$binary_dir/$name" "$archive_dir/$name"
           done
@@ -157,7 +157,7 @@ jobs:
           FILE_MACHINE: ${{ matrix.file_machine }}
         run: |
           set -euo pipefail
-          for binary in dist/bin-${TARGET}/websudo dist/bin-${TARGET}/websudo-askpass dist/bin-${TARGET}/websudo-approverd dist/bin-${TARGET}/websudo-rootd; do
+          for binary in dist/bin-${TARGET}/websudo dist/bin-${TARGET}/websudo-askpass dist/bin-${TARGET}/websudo-approverd; do
             test -x "$binary"
             file "$binary" | grep -i "$FILE_MACHINE"
           done

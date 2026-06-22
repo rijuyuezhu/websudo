@@ -1,5 +1,4 @@
 import type {
-  ApprovalRequest,
   AskpassRequest,
   DashboardResponse,
   SessionResponse,
@@ -71,26 +70,6 @@ export function submitAskpassPassword(
 
 export function denyAskpass(id: string): Promise<void> {
   return request<void>(`/api/askpass/${encodeURIComponent(id)}/deny`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  })
-}
-
-export function getRequest(id: string): Promise<ApprovalRequest> {
-  return request<ApprovalRequest>(
-    `/api/browser/requests/${encodeURIComponent(id)}`,
-  )
-}
-
-export function approveRequest(id: string): Promise<void> {
-  return request<void>(`/api/requests/${encodeURIComponent(id)}/approve`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  })
-}
-
-export function denyRequest(id: string): Promise<void> {
-  return request<void>(`/api/requests/${encodeURIComponent(id)}/deny`, {
     method: 'POST',
     body: JSON.stringify({}),
   })

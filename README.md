@@ -24,7 +24,3 @@ If sudo's timestamp cache is fresh, no browser prompt appears. If sudo needs a p
 6. Run `WEBSUDO_ASKPASS_PATH="$PWD/build/websudo-askpass" build/websudo -v` or `WEBSUDO_ASKPASS_PATH="$PWD/build/websudo-askpass" build/websudo /usr/bin/true` in a terminal.
 7. If sudo needs a password, approve the prompt in the web UI and submit the sudo password.
 8. Use `Logout` in the web UI to clear the browser session.
-
-## Legacy Root Executor
-
-`websudo-rootd` and the old fixed-token root execution flow are legacy implementation pieces. The default PoC path does not use them.

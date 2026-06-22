@@ -2,11 +2,7 @@ package config
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -14,12 +10,6 @@ import (
 type Config struct {
 	WebAddr                string
 	ApprovalTimeoutSeconds int
-	TTYTimeoutSeconds      int
-	TokenHashHex           string
-	DatabasePath           string
-	TimestampDir           string
-	RootSocketPath         string
-	RootAllowedUID         int
 	SudoPath               string
 	AskpassPath            string
 }
@@ -27,16 +17,9 @@ type Config struct {
 func Default() Config {
 	fileEnv := readEnvironmentFile(defaultEnvFilePath())
 
-	rootSocketPath := defaultRootSocketPath()
 	cfg := Config{
 		WebAddr:                "127.0.0.1:17878",
 		ApprovalTimeoutSeconds: 600,
-		TTYTimeoutSeconds:      300,
-		TokenHashHex:           MustHashToken("123456"),
-		DatabasePath:           defaultDatabasePath(),
-		TimestampDir:           defaultTimestampDir(),
-		RootSocketPath:         rootSocketPath,
-		RootAllowedUID:         defaultRootAllowedUID(rootSocketPath),
 		SudoPath:               "/usr/bin/sudo",
 		AskpassPath:            "",
 	}
@@ -45,25 +28,6 @@ func Default() Config {
 	}
 	if value, ok := envInt(fileEnv, "WEBSUDO_APPROVAL_TIMEOUT_SECONDS"); ok {
 		cfg.ApprovalTimeoutSeconds = value
-	}
-	if value, ok := envInt(fileEnv, "WEBSUDO_TTY_TIMEOUT_SECONDS"); ok {
-		cfg.TTYTimeoutSeconds = value
-	}
-	if value, ok := envString(fileEnv, "WEBSUDO_TOKEN_HASH_HEX"); ok {
-		cfg.TokenHashHex = value
-	}
-	if value, ok := envString(fileEnv, "WEBSUDO_DATABASE_PATH"); ok {
-		cfg.DatabasePath = value
-	}
-	if value, ok := envString(fileEnv, "WEBSUDO_TIMESTAMP_DIR"); ok {
-		cfg.TimestampDir = value
-	}
-	if value, ok := envString(fileEnv, "WEBSUDO_ROOT_SOCKET_PATH"); ok {
-		cfg.RootSocketPath = value
-		cfg.RootAllowedUID = defaultRootAllowedUID(value)
-	}
-	if value, ok := envInt(fileEnv, "WEBSUDO_ROOT_ALLOWED_UID"); ok {
-		cfg.RootAllowedUID = value
 	}
 	if value, ok := envString(fileEnv, "WEBSUDO_SUDO_PATH"); ok {
 		cfg.SudoPath = value
@@ -79,44 +43,6 @@ func defaultEnvFilePath() string {
 		return value
 	}
 	return "/etc/websudo/websudo.env"
-}
-
-func defaultDatabasePath() string {
-	if homeDir, err := os.UserHomeDir(); err == nil && strings.TrimSpace(homeDir) != "" {
-		return filepath.Join(homeDir, ".websudo", "websudo.db")
-	}
-	return filepath.Join(".", ".websudo", "websudo.db")
-}
-
-func defaultTimestampDir() string {
-	if runtimeDir, ok := envString(nil, "XDG_RUNTIME_DIR"); ok {
-		return filepath.Join(runtimeDir, "websudo")
-	}
-	if homeDir, err := os.UserHomeDir(); err == nil && strings.TrimSpace(homeDir) != "" {
-		return filepath.Join(homeDir, ".websudo", "timestamps")
-	}
-	return filepath.Join(".", ".websudo", "timestamps")
-}
-
-func defaultRootSocketPath() string {
-	if runtimeDir, ok := envString(nil, "XDG_RUNTIME_DIR"); ok {
-		return filepath.Join(runtimeDir, "websudo-rootd.sock")
-	}
-	return "/run/websudo-rootd.sock"
-}
-
-func defaultRootAllowedUID(rootSocketPath string) int {
-	parts := strings.Split(filepath.Clean(rootSocketPath), string(filepath.Separator))
-	for index := 0; index+1 < len(parts); index++ {
-		if parts[index] != "user" {
-			continue
-		}
-		uid, err := strconv.Atoi(parts[index+1])
-		if err == nil {
-			return uid
-		}
-	}
-	return os.Getuid()
 }
 
 func readEnvironmentFile(path string) map[string]string {
@@ -168,19 +94,4 @@ func envInt(fileEnv map[string]string, key string) (int, bool) {
 		return 0, false
 	}
 	return parsed, true
-}
-
-func MustHashToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
-}
-
-func VerifyToken(hashHex, token string) bool {
-	decodedHash, err := hex.DecodeString(strings.TrimSpace(hashHex))
-	if err != nil {
-		return false
-	}
-
-	sum := sha256.Sum256([]byte(token))
-	return subtle.ConstantTimeCompare(decodedHash, sum[:]) == 1
 }
