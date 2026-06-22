@@ -49,8 +49,6 @@ esac
 printf '%s\n' "$setup_output"
 
 [ -f "$user_unit" ] || die "User unit not found: $user_unit"
-[ ! -e /usr/bin/websudo-rootd ] || die 'Legacy rootd binary should not be installed by native packages'
-[ ! -e /usr/lib/systemd/system/websudo-rootd@.service ] || die 'Legacy rootd system unit should not be installed by native packages'
 
 systemd-analyze --user verify "$user_unit"
 

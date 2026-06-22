@@ -4,7 +4,6 @@ After=default.target
 
 [Service]
 Type=simple
-Environment=WEBSUDO_ROOT_SOCKET_PATH=%t/websudo-rootd.sock
 EnvironmentFile=-/etc/websudo/websudo.env
 ExecStart=%h/.local/bin/websudo-approverd
 Restart=on-failure

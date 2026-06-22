@@ -3,7 +3,6 @@ import { getSession } from './api'
 import DashboardView from './views/DashboardView.vue'
 import LoginView from './views/LoginView.vue'
 import AskpassView from './views/AskpassView.vue'
-import RequestView from './views/RequestView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -19,12 +18,6 @@ const router = createRouter({
       path: '/askpass/:id',
       name: 'askpass',
       component: AskpassView,
-      props: true,
-    },
-    {
-      path: '/requests/:id',
-      name: 'request',
-      component: RequestView,
       props: true,
     },
   ],
