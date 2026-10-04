@@ -61,7 +61,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/session", s.handleSession)
 	mux.HandleFunc("/api/logout", s.handleLogout)
 	mux.HandleFunc("/api/dashboard", s.handleDashboard)
-	mux.HandleFunc("/api/askpass", s.handleAskpassCreate)
+	mux.HandleFunc("/api/askpass", http.NotFound)
 	mux.HandleFunc("/api/askpass/", s.handleAskpassAction)
 	mux.HandleFunc("/api/", http.NotFound)
 	mux.HandleFunc("/", s.handleFrontend)

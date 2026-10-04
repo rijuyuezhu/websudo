@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestAskpassStoreCreateCompleteConsumeOnce(t *testing.T) {
+func TestAskpassStoreCreateCompleteDeliversPassword(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-1" })
 
@@ -20,28 +20,21 @@ func TestAskpassStoreCreateCompleteConsumeOnce(t *testing.T) {
 	if req.Status != AskpassPending {
 		t.Fatalf("status = %q, want %q", req.Status, AskpassPending)
 	}
+	result, err := store.Result(req.ID)
+	if err != nil {
+		t.Fatalf("Result() error = %v", err)
+	}
 
-	completed, err := store.Complete("askpass-1", "secret")
+	completed, err := store.Complete(req.ID, "secret")
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
 	if completed.Status != AskpassCompleted {
 		t.Fatalf("status = %q, want %q", completed.Status, AskpassCompleted)
 	}
-	token, err := store.ConsumeToken("askpass-1")
-	if err != nil {
-		t.Fatalf("ConsumeToken() error = %v", err)
-	}
-
-	password, err := store.Consume("askpass-1", token)
-	if err != nil {
-		t.Fatalf("Consume() error = %v", err)
-	}
-	if password != "secret" {
-		t.Fatalf("password = %q, want secret", password)
-	}
-	if _, err := store.Consume("askpass-1", token); err == nil {
-		t.Fatal("second Consume() error = nil, want missing request")
+	outcome := <-result
+	if outcome.status != AskpassCompleted || outcome.password != "secret" {
+		t.Fatalf("outcome = %#v, want completed secret", outcome)
 	}
 }
 
@@ -59,161 +52,105 @@ func TestAskpassStoreDoesNotExposePasswordInGet(t *testing.T) {
 	if req.Status != AskpassCompleted {
 		t.Fatalf("status = %q, want completed", req.Status)
 	}
+	if strings.Contains(req.Prompt, "secret") {
+		t.Fatalf("request unexpectedly exposed password: %#v", req)
+	}
 }
 
-func TestAskpassStoreDenyAndExpire(t *testing.T) {
-	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	ids := []string{"askpass-deny", "askpass-expire"}
-	store := newAskpassStoreForTest(func() time.Time { return now }, func() string {
-		id := ids[0]
-		ids = ids[1:]
-		return id
-	})
+func TestAskpassStoreDenyDeliversTerminalResult(t *testing.T) {
+	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-deny" })
+	req := store.Create("Password:")
+	result, err := store.Result(req.ID)
+	if err != nil {
+		t.Fatalf("Result() error = %v", err)
+	}
 
-	store.Create("deny")
-	denied, err := store.Deny("askpass-deny")
+	denied, err := store.Deny(req.ID)
 	if err != nil {
 		t.Fatalf("Deny() error = %v", err)
 	}
 	if denied.Status != AskpassDenied {
 		t.Fatalf("status = %q, want denied", denied.Status)
 	}
-	denyToken, err := store.ConsumeToken("askpass-deny")
-	if err != nil {
-		t.Fatalf("ConsumeToken() error = %v", err)
-	}
-	if _, err := store.Consume("askpass-deny", denyToken); err == nil {
-		t.Fatal("Consume(denied) error = nil, want terminal status error")
-	}
-
-	store.Create("expire")
-	expired := store.ExpireBefore(now.Add(time.Second))
-	if expired != 1 {
-		t.Fatalf("expired = %d, want 1", expired)
-	}
-	req, err := store.Get("askpass-expire")
-	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-	if req.Status != AskpassExpired {
-		t.Fatalf("status = %q, want expired", req.Status)
+	outcome := <-result
+	if outcome.status != AskpassDenied || outcome.password != "" {
+		t.Fatalf("outcome = %#v, want denied without password", outcome)
 	}
 }
 
-func TestAskpassStoreConsumeReportsCurrentStatus(t *testing.T) {
+func TestAskpassStoreExpirePendingDeliversTerminalResult(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	current := now.Add(time.Second)
-	ids := []string{"askpass-pending", "askpass-denied", "askpass-expired"}
-	store := newAskpassStoreForTest(func() time.Time { return current }, func() string {
-		id := ids[0]
-		ids = ids[1:]
-		return id
-	})
-
-	store.Create("pending")
-	pendingToken, err := store.ConsumeToken("askpass-pending")
+	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-expire" })
+	req := store.Create("Password:")
+	result, err := store.Result(req.ID)
 	if err != nil {
-		t.Fatalf("ConsumeToken() error = %v", err)
-	}
-	if _, err := store.Consume("askpass-pending", pendingToken); err == nil || !strings.Contains(err.Error(), string(AskpassPending)) {
-		t.Fatalf("Consume(pending) error = %v, want status %q", err, AskpassPending)
+		t.Fatalf("Result() error = %v", err)
 	}
 
-	current = now
-	store.Create("denied")
-	if _, err := store.Deny("askpass-denied"); err != nil {
+	if expired := store.ExpireBefore(now.Add(time.Second)); expired != 1 {
+		t.Fatalf("expired = %d, want 1", expired)
+	}
+	outcome := <-result
+	if outcome.status != AskpassExpired || outcome.password != "" {
+		t.Fatalf("outcome = %#v, want expired without password", outcome)
+	}
+}
+
+func TestAskpassStoreRejectsRepeatedTerminalActions(t *testing.T) {
+	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-terminal" })
+	store.Create("Password:")
+	if _, err := store.Deny("askpass-terminal"); err != nil {
 		t.Fatalf("Deny() error = %v", err)
 	}
-	store.Create("expired")
-	if expired := store.ExpireBefore(now); expired != 1 {
-		t.Fatalf("expired = %d, want 1", expired)
+	if _, err := store.Deny("askpass-terminal"); err == nil {
+		t.Fatal("second Deny() error = nil, want conflict")
 	}
-
-	for _, tc := range []struct {
-		id     string
-		status AskpassStatus
-	}{
-		{id: "askpass-denied", status: AskpassDenied},
-		{id: "askpass-expired", status: AskpassExpired},
-	} {
-		token, err := store.ConsumeToken(tc.id)
-		if err != nil {
-			t.Fatalf("ConsumeToken(%q) error = %v", tc.id, err)
-		}
-		if _, err := store.Consume(tc.id, token); err == nil || !strings.Contains(err.Error(), string(tc.status)) {
-			t.Fatalf("Consume(%q) error = %v, want status %q", tc.id, err, tc.status)
-		}
+	if _, err := store.Complete("askpass-terminal", "secret"); err == nil {
+		t.Fatal("Complete(denied) error = nil, want conflict")
 	}
 }
 
-func TestAskpassStoreConsumeRequiresValidTokenWithoutConsuming(t *testing.T) {
-	store := newAskpassStoreForTest(func() time.Time { return time.Now().UTC() }, func() string { return "askpass-token" })
-	store.Create("Password:")
-	if _, err := store.Complete("askpass-token", "secret"); err != nil {
-		t.Fatalf("Complete() error = %v", err)
-	}
-	token, err := store.ConsumeToken("askpass-token")
-	if err != nil {
-		t.Fatalf("ConsumeToken() error = %v", err)
-	}
-
-	for _, badToken := range []string{"", "wrong"} {
-		if _, err := store.Consume("askpass-token", badToken); err == nil || !strings.Contains(err.Error(), "invalid") {
-			t.Fatalf("Consume(invalid token %q) error = %v, want invalid token", badToken, err)
-		}
-	}
-
-	password, err := store.Consume("askpass-token", token)
-	if err != nil {
-		t.Fatalf("Consume(valid token) error = %v", err)
-	}
-	if password != "secret" {
-		t.Fatalf("password = %q, want secret", password)
+func TestAskpassStoreResultMissingRequest(t *testing.T) {
+	store := NewAskpassStore()
+	if _, err := store.Result("missing"); err == nil {
+		t.Fatal("Result(missing) error = nil")
 	}
 }
 
-func TestAskpassStoreExpiresCompletedRequestsAndClearsPassword(t *testing.T) {
-	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-completed-expire" })
-	store.Create("Password:")
-	token, err := store.ConsumeToken("askpass-completed-expire")
-	if err != nil {
-		t.Fatalf("ConsumeToken() error = %v", err)
-	}
-	if _, err := store.Complete("askpass-completed-expire", "secret"); err != nil {
-		t.Fatalf("Complete() error = %v", err)
-	}
-
-	if expired := store.ExpireBefore(now); expired != 1 {
-		t.Fatalf("expired = %d, want 1", expired)
-	}
-	req, err := store.Get("askpass-completed-expire")
-	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-	if req.Status != AskpassExpired {
-		t.Fatalf("status = %q, want expired", req.Status)
-	}
-	if _, err := store.Consume("askpass-completed-expire", token); err == nil || !strings.Contains(err.Error(), string(AskpassExpired)) || strings.Contains(err.Error(), "secret") {
-		t.Fatalf("Consume(expired completed) error = %v, want expired without password", err)
-	}
-}
-
-func TestAskpassStoreActivelyExpiresCompletedRequest(t *testing.T) {
+func TestAskpassStoreActivelyExpiresCompletedMetadata(t *testing.T) {
 	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-active-expire" })
 	store.setExpirationTimeout(20 * time.Millisecond)
 	store.Create("Password:")
-	token, err := store.ConsumeToken("askpass-active-expire")
-	if err != nil {
-		t.Fatalf("ConsumeToken() error = %v", err)
-	}
 	if _, err := store.Complete("askpass-active-expire", "secret"); err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
 
 	time.Sleep(60 * time.Millisecond)
-	if _, err := store.Consume("askpass-active-expire", token); err == nil || !strings.Contains(err.Error(), string(AskpassExpired)) || strings.Contains(err.Error(), "secret") {
-		t.Fatalf("Consume(active expired) error = %v, want expired without password", err)
+	req, err := store.Get("askpass-active-expire")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if req.Status != AskpassExpired {
+		t.Fatalf("status = %q, want expired", req.Status)
+	}
+}
+
+func TestAskpassStoreActivelyExpiresPendingRequest(t *testing.T) {
+	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-pending-expire" })
+	store.setExpirationTimeout(20 * time.Millisecond)
+	req := store.Create("Password:")
+	result, err := store.Result(req.ID)
+	if err != nil {
+		t.Fatalf("Result() error = %v", err)
+	}
+
+	select {
+	case outcome := <-result:
+		if outcome.status != AskpassExpired {
+			t.Fatalf("outcome status = %q, want expired", outcome.status)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending request did not expire")
 	}
 }
 

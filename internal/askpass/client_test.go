@@ -3,49 +3,52 @@ package askpass
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"errors"
+	"net"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestClientCreateAndWaitForPassword(t *testing.T) {
-	consumeCalls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/askpass":
-			var body map[string]string
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatalf("Decode() error = %v", err)
-			}
-			if body["prompt"] != "Password:" {
-				t.Fatalf("prompt = %q, want Password:", body["prompt"])
-			}
-			writeTestJSON(w, http.StatusCreated, map[string]any{"id": "askpass-client", "prompt": "Password:", "status": "pending", "createdAt": "2026-06-01T12:00:00Z", "consumeToken": "token-1"})
-		case r.Method == http.MethodPost && r.URL.Path == "/api/askpass/askpass-client/consume":
-			consumeCalls++
-			if r.Header.Get("X-Websudo-Askpass-Token") != "token-1" {
-				t.Fatalf("consume token = %q", r.Header.Get("X-Websudo-Askpass-Token"))
-			}
-			if consumeCalls == 1 {
-				w.WriteHeader(http.StatusConflict)
-				return
-			}
-			writeTestJSON(w, http.StatusOK, map[string]string{"password": "secret"})
-		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+	listener, socketPath := testUnixListener(t)
+	serverErr := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			serverErr <- err
+			return
 		}
-	}))
-	defer server.Close()
+		defer func() { _ = conn.Close() }()
 
-	client := New(server.URL, server.Client())
-	client.pollInterval = time.Millisecond
+		var request IPCRequest
+		if err := json.NewDecoder(conn).Decode(&request); err != nil {
+			serverErr <- err
+			return
+		}
+		if request.Prompt != "Password:" {
+			serverErr <- errors.New("unexpected prompt")
+			return
+		}
+		encoder := json.NewEncoder(conn)
+		if err := encoder.Encode(IPCCreated{ID: "askpass-client"}); err != nil {
+			serverErr <- err
+			return
+		}
+		if err := encoder.Encode(IPCResult{Password: "secret"}); err != nil {
+			serverErr <- err
+			return
+		}
+		serverErr <- nil
+	}()
+
+	client := New(socketPath)
 	req, err := client.Create(context.Background(), "Password:")
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if req.ID != "askpass-client" || req.ConsumeToken != "token-1" {
-		t.Fatalf("request = %#v", req)
+	if req.ID != "askpass-client" {
+		t.Fatalf("request ID = %q, want askpass-client", req.ID)
 	}
 	password, err := client.WaitForPassword(context.Background(), req)
 	if err != nil {
@@ -54,91 +57,101 @@ func TestClientCreateAndWaitForPassword(t *testing.T) {
 	if password != "secret" {
 		t.Fatalf("password = %q, want secret", password)
 	}
-	if consumeCalls != 2 {
-		t.Fatalf("consumeCalls = %d, want 2", consumeCalls)
+	if err := <-serverErr; err != nil {
+		t.Fatalf("server error = %v", err)
 	}
 }
 
-func TestClientWaitForPasswordExpiredReturnsError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/askpass/askpass-expired/consume" {
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+func TestClientWaitForPasswordReturnsTerminalError(t *testing.T) {
+	listener, socketPath := testUnixListener(t)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
 		}
-		if r.Header.Get("X-Websudo-Askpass-Token") != "token-2" {
-			t.Fatalf("consume token = %q", r.Header.Get("X-Websudo-Askpass-Token"))
+		defer func() { _ = conn.Close() }()
+		var request IPCRequest
+		if json.NewDecoder(conn).Decode(&request) != nil {
+			return
 		}
-		w.WriteHeader(http.StatusGone)
-	}))
-	defer server.Close()
+		encoder := json.NewEncoder(conn)
+		_ = encoder.Encode(IPCCreated{ID: "askpass-denied"})
+		_ = encoder.Encode(IPCResult{Error: "askpass request denied"})
+	}()
 
-	client := New(server.URL, server.Client())
-	_, err := client.WaitForPassword(context.Background(), Request{ID: "askpass-expired", ConsumeToken: "token-2"})
-	if err == nil {
-		t.Fatal("WaitForPassword() error = nil, want terminal error")
+	client := New(socketPath)
+	req, err := client.Create(context.Background(), "Password:")
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := client.WaitForPassword(context.Background(), req); err == nil || err.Error() != "askpass request denied" {
+		t.Fatalf("WaitForPassword() error = %v, want denied", err)
 	}
 }
 
-func TestClientWaitForPasswordForbiddenReturnsError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/askpass/askpass-forbidden/consume" {
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+func TestClientCreateHonorsContextCancellation(t *testing.T) {
+	listener, socketPath := testUnixListener(t)
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
 		}
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	defer server.Close()
+	}()
 
-	client := New(server.URL, server.Client())
-	_, err := client.WaitForPassword(context.Background(), Request{ID: "askpass-forbidden", ConsumeToken: "token-3"})
-	if err == nil {
-		t.Fatal("WaitForPassword() error = nil, want forbidden error")
-	}
-}
-
-func TestClientWaitForPasswordNotFoundReturnsTerminalError(t *testing.T) {
-	consumeCalls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/askpass/askpass-missing/consume" {
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-		if r.Header.Get("X-Websudo-Askpass-Token") != "token-4" {
-			t.Fatalf("consume token = %q", r.Header.Get("X-Websudo-Askpass-Token"))
-		}
-		consumeCalls++
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	client := New(server.URL, server.Client())
-	client.pollInterval = time.Millisecond
-	_, err := client.WaitForPassword(ctx, Request{ID: "askpass-missing", ConsumeToken: "token-4"})
-	if err == nil {
-		t.Fatal("WaitForPassword() error = nil, want not found error")
+	client := New(socketPath)
+	_, err := client.Create(ctx, "Password:")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Create() error = %v, want deadline exceeded", err)
 	}
-	if consumeCalls != 1 {
-		t.Fatalf("consumeCalls = %d, want 1", consumeCalls)
+
+	select {
+	case conn := <-accepted:
+		_ = conn.Close()
+	case <-time.After(time.Second):
+		t.Fatal("server did not accept connection")
 	}
 }
 
-func TestClientCreateServiceUnavailableReturnsError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/askpass" {
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+func TestClientWaitForPasswordHonorsContextCancellation(t *testing.T) {
+	listener, socketPath := testUnixListener(t)
+	release := make(chan struct{})
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
 		}
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	defer server.Close()
+		defer func() { _ = conn.Close() }()
+		var request IPCRequest
+		if json.NewDecoder(conn).Decode(&request) != nil {
+			return
+		}
+		_ = json.NewEncoder(conn).Encode(IPCCreated{ID: "askpass-timeout"})
+		<-release
+	}()
+	defer close(release)
 
-	client := New(server.URL, server.Client())
-	_, err := client.Create(context.Background(), "Password:")
-	if err == nil {
-		t.Fatal("Create() error = nil, want service unavailable error")
+	client := New(socketPath)
+	req, err := client.Create(context.Background(), "Password:")
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := client.WaitForPassword(ctx, req); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WaitForPassword() error = %v, want deadline exceeded", err)
 	}
 }
 
-func writeTestJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+func testUnixListener(t *testing.T) (net.Listener, string) {
+	t.Helper()
+	socketPath := filepath.Join(t.TempDir(), "askpass.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	return listener, socketPath
 }
