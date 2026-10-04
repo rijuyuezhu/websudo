@@ -9,7 +9,7 @@ import (
 	"testing/fstest"
 )
 
-func TestFrontendRoutesServeSPAIndex(t *testing.T) {
+func TestFrontendRoutesServeIndex(t *testing.T) {
 	srv := NewServer(Dependencies{StaticFS: fstest.MapFS{
 		"index.html": &fstest.MapFile{Data: []byte(`<!doctype html><div id="app"></div>`)},
 	}})
@@ -28,14 +28,14 @@ func TestFrontendRoutesServeSPAIndex(t *testing.T) {
 	}
 }
 
-func TestFrontendServesBuiltAsset(t *testing.T) {
+func TestFrontendServesStaticAsset(t *testing.T) {
 	srv := NewServer(Dependencies{StaticFS: fstest.MapFS{
-		"index.html":     &fstest.MapFile{Data: []byte(`<!doctype html><div id="app"></div>`)},
-		"assets/app.css": &fstest.MapFile{Data: []byte(`body{color:#111}`)},
+		"index.html": &fstest.MapFile{Data: []byte(`<!doctype html><div id="app"></div>`)},
+		"styles.css": &fstest.MapFile{Data: []byte(`body{color:#111}`)},
 	}})
 
 	w := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/assets/app.css", nil))
+	srv.Routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/styles.css", nil))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
@@ -45,7 +45,7 @@ func TestFrontendServesBuiltAsset(t *testing.T) {
 	}
 }
 
-func TestAPIMissDoesNotServeSPAIndex(t *testing.T) {
+func TestAPIMissDoesNotServeFrontendIndex(t *testing.T) {
 	srv := NewServer(Dependencies{StaticFS: fstest.MapFS{
 		"index.html": &fstest.MapFile{Data: []byte(`<!doctype html><div id="app"></div>`)},
 	}})
@@ -58,9 +58,22 @@ func TestAPIMissDoesNotServeSPAIndex(t *testing.T) {
 	}
 }
 
-func TestFrontendReportsMissingBuild(t *testing.T) {
+func TestFrontendAssetMissReturnsNotFound(t *testing.T) {
 	srv := NewServer(Dependencies{StaticFS: fstest.MapFS{
-		"keep.txt": &fstest.MapFile{Data: []byte("placeholder")},
+		"index.html": &fstest.MapFile{Data: []byte(`<!doctype html><div id="app"></div>`)},
+	}})
+
+	w := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/missing.js", nil))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestFrontendReportsMissingAssets(t *testing.T) {
+	srv := NewServer(Dependencies{StaticFS: fstest.MapFS{
+		"other.txt": &fstest.MapFile{Data: []byte("placeholder")},
 	}})
 
 	w := httptest.NewRecorder()
@@ -68,6 +81,31 @@ func TestFrontendReportsMissingBuild(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestEmbeddedFrontendAssets(t *testing.T) {
+	frontend := embeddedFrontendFS()
+	for _, name := range []string{"index.html", "styles.css", "app.js"} {
+		t.Run(name, func(t *testing.T) {
+			data, err := fs.ReadFile(frontend, name)
+			if err != nil {
+				t.Fatalf("ReadFile(%q) error = %v", name, err)
+			}
+			if len(data) == 0 {
+				t.Fatalf("ReadFile(%q) returned an empty asset", name)
+			}
+		})
+	}
+
+	index, err := fs.ReadFile(frontend, "index.html")
+	if err != nil {
+		t.Fatalf("ReadFile(index.html) error = %v", err)
+	}
+	for _, ref := range []string{`href="/styles.css"`, `src="/app.js"`} {
+		if !strings.Contains(string(index), ref) {
+			t.Fatalf("index.html missing asset reference %q", ref)
+		}
 	}
 }
 

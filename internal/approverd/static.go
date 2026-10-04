@@ -7,7 +7,6 @@ import (
 	"mime"
 	"net/http"
 	pathpkg "path"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -34,15 +33,19 @@ func (s *Server) handleFrontend(w http.ResponseWriter, r *http.Request) {
 		filePath = "index.html"
 	}
 	data, err := fs.ReadFile(s.staticFS, filePath)
+	if err != nil && filePath != "index.html" && pathpkg.Ext(filePath) != "" {
+		http.NotFound(w, r)
+		return
+	}
 	if err != nil {
 		filePath = "index.html"
 		data, err = fs.ReadFile(s.staticFS, filePath)
 	}
 	if err != nil {
-		http.Error(w, "frontend assets not built", http.StatusInternalServerError)
+		http.Error(w, "frontend assets unavailable", http.StatusInternalServerError)
 		return
 	}
-	if contentType := mime.TypeByExtension(filepath.Ext(filePath)); contentType != "" {
+	if contentType := mime.TypeByExtension(pathpkg.Ext(filePath)); contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
 	http.ServeContent(w, r, filePath, time.Time{}, bytes.NewReader(data))

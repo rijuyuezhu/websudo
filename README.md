@@ -52,13 +52,16 @@ Before uninstalling the package, disable the user service from that same session
 systemctl --user disable --now websudo-approverd.service
 ```
 
+## Frontend
+
+The three-view approval UI is embedded directly from `internal/approverd/static/app/` (`index.html`, `styles.css`, and `app.js`). There is no separate frontend build step or Node dependency.
+
 ## Manual Test
 
-1. Install frontend dependencies once with `npm install --prefix web`.
-2. Build the project with `just build`.
-3. Start `build/websudo-approverd` as your user.
-4. Open `http://127.0.0.1:17878`.
-5. Log in with the current machine password. The browser session lasts up to 72 hours or until logout.
-6. Run `build/websudo -v` or `build/websudo /usr/bin/true` in a terminal. `websudo` uses the `websudo-askpass` binary built alongside it.
-7. If the selected sudo-compatible executable needs a password, approve the prompt in the web UI and submit it.
-8. Use `Logout` in the web UI to clear the browser session.
+1. Build the project with `just build`.
+2. Start `build/websudo-approverd` as your user.
+3. Open `http://127.0.0.1:17878`.
+4. Log in with the current machine password. The browser session lasts up to 72 hours or until logout.
+5. Run `build/websudo -v` or `build/websudo /usr/bin/true` in a terminal. `websudo` uses the `websudo-askpass` binary built alongside it.
+6. If the selected sudo-compatible executable needs a password, approve the prompt in the web UI and submit it.
+7. Use `Logout` in the web UI to clear the browser session.
