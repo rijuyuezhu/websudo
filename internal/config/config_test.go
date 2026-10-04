@@ -110,6 +110,52 @@ func TestLoadIgnoresCallerEnvironment(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsLoopbackWebAddr(t *testing.T) {
+	for _, value := range []string{"127.0.0.1:17878", "127.42.0.1:1", "[::1]:65535"} {
+		t.Run(value, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "websudo.env")
+			if err := os.WriteFile(path, []byte("WEBSUDO_WEB_ADDR="+value+"\n"), 0o600); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+
+			cfg, err := load(path)
+			if err != nil {
+				t.Fatalf("load() error = %v", err)
+			}
+			if cfg.WebAddr != value {
+				t.Fatalf("WebAddr = %q, want %q", cfg.WebAddr, value)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsNonLoopbackWebAddr(t *testing.T) {
+	for _, value := range []string{
+		"",
+		"localhost:17878",
+		"0.0.0.0:17878",
+		"[::]:17878",
+		"192.168.1.10:17878",
+		"8.8.8.8:17878",
+		"127.0.0.1:0",
+		"127.0.0.1",
+		"127.0.0.1:http",
+		"::1:17878",
+	} {
+		t.Run(value, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "websudo.env")
+			if err := os.WriteFile(path, []byte("WEBSUDO_WEB_ADDR="+value+"\n"), 0o600); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+
+			_, err := load(path)
+			if err == nil || !strings.Contains(err.Error(), "WEBSUDO_WEB_ADDR must") {
+				t.Fatalf("load() error = %v, want web-address validation error", err)
+			}
+		})
+	}
+}
+
 func TestLoadRejectsInvalidTimeout(t *testing.T) {
 	for _, value := range []string{"0", "-1", "invalid", "", "9223372037"} {
 		t.Run(value, func(t *testing.T) {
