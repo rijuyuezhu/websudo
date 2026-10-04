@@ -165,11 +165,24 @@ func TestDashboardRequiresSession(t *testing.T) {
 
 func TestDashboardReturnsAskpassPromptsWithSession(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	askpassStore := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-dashboard" })
+	ids := []string{"askpass-pending", "askpass-recent"}
+	askpassStore := newAskpassStoreForTest(func() time.Time { return now }, func() string {
+		id := ids[0]
+		ids = ids[1:]
+		return id
+	})
 	_, _ = askpassStore.Create("Password:", AskpassProvenance{
 		Command: []string{"/usr/bin/id", "-u"},
 		CWD:     "/home/alice/project",
 	})
+	_, _ = askpassStore.Create("Password:", AskpassProvenance{
+		Command: []string{"/usr/bin/systemctl", "restart", "example.service"},
+		CWD:     "/home/alice/admin",
+	})
+	now = now.Add(time.Second)
+	if _, err := askpassStore.Deny("askpass-recent"); err != nil {
+		t.Fatalf("Deny(recent) error = %v", err)
+	}
 	srv := NewServer(Dependencies{
 		AskpassStore: askpassStore,
 		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) {
@@ -185,17 +198,19 @@ func TestDashboardReturnsAskpassPromptsWithSession(t *testing.T) {
 		t.Fatalf("dashboard status = %d, want %d", w.Code, http.StatusOK)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "askpass-dashboard") {
-		t.Fatalf("dashboard body = %q, want askpass prompt", body)
+	for _, want := range []string{"\"askpassPending\"", "askpass-pending", "\"askpassRecent\"", "askpass-recent", "\"status\":\"denied\"", "\"finishedAt\""} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("dashboard body = %q, want %q", body, want)
+		}
 	}
-	for _, want := range []string{"/usr/bin/id", "/home/alice/project"} {
+	for _, want := range []string{"/usr/bin/id", "/home/alice/project", "/usr/bin/systemctl", "/home/alice/admin"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard body = %q, want provenance %q", body, want)
 		}
 	}
-	for _, notWant := range []string{"\"pending\":", "\"recent\":", "req-"} {
+	for _, notWant := range []string{"\"password\":", "req-"} {
 		if strings.Contains(body, notWant) {
-			t.Fatalf("dashboard body = %q, contains removed command request field %q", body, notWant)
+			t.Fatalf("dashboard body = %q, contains secret/removed field %q", body, notWant)
 		}
 	}
 }
