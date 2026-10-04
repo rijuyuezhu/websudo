@@ -99,8 +99,43 @@ jobs:
       - run: npm ci --prefix web
       - run: just build
 
-  linux-release:
-    name: linux release (${{ matrix.target }})
+  artifact-gate:
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.filter.outputs.run }}
+    steps:
+      - if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${GITHUB_EVENT_NAME}" = pull_request ]; then
+            base_sha=$PR_BASE_SHA
+            head_sha=$PR_HEAD_SHA
+          else
+            base_sha=$PUSH_BASE_SHA
+            head_sha=$GITHUB_SHA
+          fi
+          if git diff --quiet "$base_sha" "$head_sha" -- nfpm.yaml README.md LICENSE packaging .github/workflows/ci.yml; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  linux-artifacts:
+    if: needs.artifact-gate.outputs.run == 'true'
+    needs: artifact-gate
+    name: linux artifacts (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -137,7 +172,7 @@ jobs:
       - run: npm ci --prefix web
       - name: Build frontend
         run: npm --prefix web run build
-      - name: Build release binaries
+      - name: Build Linux archive
         env:
           GOARCH: ${{ matrix.goarch }}
           TARGET: ${{ matrix.target }}
@@ -155,7 +190,7 @@ jobs:
           cp packaging/websudo.env.example "$archive_dir/packaging/websudo.env.example"
           cp packaging/systemd/*.service "$archive_dir/packaging/systemd/"
           tar -czf "dist/websudo-${TARGET}.tar.gz" -C archive "websudo-${TARGET}"
-      - name: Verify release binaries
+      - name: Verify Linux binaries
         env:
           TARGET: ${{ matrix.target }}
           FILE_MACHINE: ${{ matrix.file_machine }}
@@ -189,7 +224,7 @@ jobs:
             echo "PACKAGE_VERSION=${package_version}"
             echo "PACKAGE_RELEASE=${package_release}"
           } >> "$GITHUB_ENV"
-      - name: Package Linux installers
+      - name: Build Linux packages
         env:
           PACKAGE_ARCH: ${{ matrix.package_arch }}
           PACKAGE_BINARY_DIR: dist/bin-${{ matrix.target }}
@@ -197,15 +232,15 @@ jobs:
           nfpm package --config nfpm.yaml --packager deb --target dist/
           nfpm package --config nfpm.yaml --packager rpm --target dist/
           nfpm package --config nfpm.yaml --packager archlinux --target dist/
-      - name: Verify deb package in Debian with systemd
+      - name: Verify deb package in Debian
         run: packaging/scripts/verify-package-in-container.sh debian '${{ matrix.file_machine }}'
-      - name: Verify rpm package in Fedora with systemd
+      - name: Verify rpm package in Fedora
         run: packaging/scripts/verify-package-in-container.sh fedora '${{ matrix.file_machine }}'
-      - name: Verify Arch package in Arch Linux with systemd
+      - name: Verify Arch package in Arch Linux
         run: packaging/scripts/verify-package-in-container.sh arch '${{ matrix.file_machine }}' '${{ matrix.archlinux_image }}'
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-${{ matrix.target }}-release-artifacts
+          name: linux-${{ matrix.target }}-artifacts
           path: |
             dist/websudo-${{ matrix.target }}.tar.gz
             dist/*.deb
@@ -214,7 +249,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [fmt, lint, test, build, linux-release]
+    needs: [fmt, lint, test, build, linux-artifacts]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -222,7 +257,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: linux-*-release-artifacts
+          pattern: linux-*-artifacts
           path: dist
           merge-multiple: true
       - name: Generate checksums
@@ -243,7 +278,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: linux-*-release-artifacts
+          pattern: linux-*-artifacts
           path: dist
           merge-multiple: true
       - name: Generate AUR PKGBUILD
