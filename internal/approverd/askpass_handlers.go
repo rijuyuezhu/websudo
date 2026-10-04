@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
-	"time"
 )
 
 func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
@@ -12,7 +11,6 @@ func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "askpass store not configured", http.StatusInternalServerError)
 		return
 	}
-	s.expireAskpassRequests()
 
 	if r.Method == http.MethodGet {
 		if !s.requireSession(w, r) {
@@ -97,12 +95,4 @@ func askpassWriteStatus(err error) int {
 		return http.StatusNotFound
 	}
 	return http.StatusConflict
-}
-
-func (s *Server) expireAskpassRequests() {
-	if s.config.ApprovalTimeoutSeconds <= 0 || s.askpassStore == nil {
-		return
-	}
-	cutoff := time.Now().Add(-time.Duration(s.config.ApprovalTimeoutSeconds) * time.Second).UTC()
-	s.askpassStore.ExpireBefore(cutoff)
 }
