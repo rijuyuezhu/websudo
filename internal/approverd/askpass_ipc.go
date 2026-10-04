@@ -68,6 +68,9 @@ func (s *Server) ServeAskpassIPC(listener net.Listener) error {
 
 func (s *Server) handleAskpassIPC(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
+	if s.verifyAskpassPeer == nil || s.verifyAskpassPeer(conn) != nil {
+		return
+	}
 
 	if err := conn.SetReadDeadline(time.Now().Add(askpassIPCHandshakeTimeout)); err != nil {
 		return

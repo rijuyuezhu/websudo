@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -42,7 +44,7 @@ func TestClientCreateAndWaitForPassword(t *testing.T) {
 		serverErr <- nil
 	}()
 
-	client := New(socketPath)
+	client := testClient(t, socketPath)
 	req, err := client.Create(context.Background(), "Password:")
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -79,7 +81,7 @@ func TestClientWaitForPasswordReturnsTerminalError(t *testing.T) {
 		_ = encoder.Encode(IPCResult{Error: "askpass request denied"})
 	}()
 
-	client := New(socketPath)
+	client := testClient(t, socketPath)
 	req, err := client.Create(context.Background(), "Password:")
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -101,7 +103,7 @@ func TestClientCreateHonorsContextCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	client := New(socketPath)
+	client := testClient(t, socketPath)
 	_, err := client.Create(ctx, "Password:")
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Create() error = %v, want deadline exceeded", err)
@@ -133,7 +135,7 @@ func TestClientWaitForPasswordHonorsContextCancellation(t *testing.T) {
 	}()
 	defer close(release)
 
-	client := New(socketPath)
+	client := testClient(t, socketPath)
 	req, err := client.Create(context.Background(), "Password:")
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -143,6 +145,44 @@ func TestClientWaitForPasswordHonorsContextCancellation(t *testing.T) {
 	if _, err := client.WaitForPassword(ctx, req); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("WaitForPassword() error = %v, want deadline exceeded", err)
 	}
+}
+
+func TestClientRejectsUnexpectedApproverdBeforeSendingPrompt(t *testing.T) {
+	listener, socketPath := testUnixListener(t)
+	readResult := make(chan int, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			readResult <- -1
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+		buf := make([]byte, 1)
+		n, _ := conn.Read(buf)
+		readResult <- n
+	}()
+
+	wrongExecutable := filepath.Join(t.TempDir(), "not-approverd")
+	if err := os.WriteFile(wrongExecutable, []byte("not approverd"), 0o700); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	client := New(socketPath, wrongExecutable)
+	if _, err := client.Create(context.Background(), "Password:"); err == nil || !strings.Contains(err.Error(), "authenticate websudo approval daemon") {
+		t.Fatalf("Create() error = %v, want peer authentication failure", err)
+	}
+	if n := <-readResult; n != 0 {
+		t.Fatalf("fake approverd received %d request bytes, want 0", n)
+	}
+}
+
+func testClient(t *testing.T, socketPath string) *Client {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("Executable() error = %v", err)
+	}
+	return New(socketPath, executable)
 }
 
 func testUnixListener(t *testing.T) (net.Listener, string) {

@@ -9,6 +9,7 @@ import (
 
 	"websudo/internal/askpass"
 	"websudo/internal/config"
+	"websudo/internal/processauth"
 )
 
 func main() {
@@ -26,7 +27,12 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), approvalTimeout(cfg))
 	defer cancel()
 
-	client := askpass.New(config.AskpassSocketPath())
+	approverdExecutable, err := processauth.SiblingExecutable("websudo-approverd")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	client := askpass.New(config.AskpassSocketPath(), approverdExecutable)
 	req, err := client.Create(ctx, prompt)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

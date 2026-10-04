@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"mime"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -20,11 +21,12 @@ type Dependencies struct {
 }
 
 type Server struct {
-	config           config.Config
-	askpassStore     *AskpassStore
-	passwordVerifier PasswordVerifier
-	sessions         *SessionStore
-	staticFS         fs.FS
+	config            config.Config
+	askpassStore      *AskpassStore
+	verifyAskpassPeer func(net.Conn) error
+	passwordVerifier  PasswordVerifier
+	sessions          *SessionStore
+	staticFS          fs.FS
 }
 
 func NewServer(dep Dependencies) *Server {
@@ -47,8 +49,11 @@ func NewServer(dep Dependencies) *Server {
 	}
 
 	return &Server{
-		config:           dep.Config,
-		askpassStore:     askpassStore,
+		config:       dep.Config,
+		askpassStore: askpassStore,
+		verifyAskpassPeer: func(conn net.Conn) error {
+			return verifyAskpassProcessChain(conn)
+		},
 		passwordVerifier: passwordVerifier,
 		sessions:         sessions,
 		staticFS:         staticFS,
