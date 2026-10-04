@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -36,7 +37,10 @@ func load(path string) (Config, error) {
 		ApprovalTimeout: 10 * time.Minute,
 		SudoPath:        DefaultSudoPath,
 	}
-	if value, ok := configString(values, "WEBSUDO_WEB_ADDR"); ok {
+	if value, ok := values["WEBSUDO_WEB_ADDR"]; ok {
+		if err := validateWebAddr(value); err != nil {
+			return Config{}, err
+		}
 		cfg.WebAddr = value
 	}
 	if value, ok := values["WEBSUDO_APPROVAL_TIMEOUT_SECONDS"]; ok {
@@ -53,6 +57,14 @@ func load(path string) (Config, error) {
 		cfg.SudoPath = value
 	}
 	return cfg, nil
+}
+
+func validateWebAddr(value string) error {
+	addr, err := netip.ParseAddrPort(value)
+	if err != nil || !addr.Addr().IsLoopback() || addr.Port() == 0 {
+		return fmt.Errorf("WEBSUDO_WEB_ADDR must be an explicit loopback IP with a non-zero port: %q", value)
+	}
+	return nil
 }
 
 func AskpassSocketPath() string {
