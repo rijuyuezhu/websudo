@@ -11,7 +11,7 @@ import (
 func TestBrowserAskpassLifecycle(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-browser" })
-	request := store.Create("Password:")
+	request := store.Create("Password:", AskpassProvenance{})
 	result, err := store.Result(request.ID)
 	if err != nil {
 		t.Fatalf("Result() error = %v", err)
@@ -67,7 +67,7 @@ func TestAskpassCreateAndConsumeHTTPRoutesAreRemoved(t *testing.T) {
 func TestAskpassActionsRequireBrowserSession(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-auth" })
-	store.Create("Password:")
+	store.Create("Password:", AskpassProvenance{})
 	srv := NewServer(Dependencies{
 		AskpassStore: store,
 		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) {
@@ -110,7 +110,10 @@ func TestDashboardRequiresSession(t *testing.T) {
 func TestDashboardReturnsAskpassPromptsWithSession(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	askpassStore := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-dashboard" })
-	askpassStore.Create("Password:")
+	askpassStore.Create("Password:", AskpassProvenance{
+		Command: []string{"/usr/bin/id", "-u"},
+		CWD:     "/home/alice/project",
+	})
 	srv := NewServer(Dependencies{
 		AskpassStore: askpassStore,
 		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) {
@@ -128,6 +131,11 @@ func TestDashboardReturnsAskpassPromptsWithSession(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "askpass-dashboard") {
 		t.Fatalf("dashboard body = %q, want askpass prompt", body)
+	}
+	for _, want := range []string{"/usr/bin/id", "/home/alice/project"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("dashboard body = %q, want provenance %q", body, want)
+		}
 	}
 	for _, notWant := range []string{"\"pending\":", "\"recent\":", "req-"} {
 		if strings.Contains(body, notWant) {

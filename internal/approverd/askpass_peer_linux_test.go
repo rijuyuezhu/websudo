@@ -4,12 +4,13 @@ import (
 	"errors"
 	"net"
 	"os"
+	"reflect"
 	"testing"
 
 	"websudo/internal/processauth"
 )
 
-func TestVerifyAskpassProcessChainAcceptsTrustedChain(t *testing.T) {
+func TestVerifyAskpassProcessChainAcceptsTrustedChainAndReturnsProvenance(t *testing.T) {
 	uid := uint32(os.Getuid())
 	verified := map[int]string{}
 	inspector := askpassProcessInspector{
@@ -43,9 +44,22 @@ func TestVerifyAskpassProcessChainAcceptsTrustedChain(t *testing.T) {
 				return processauth.UIDs{}, errors.New("unexpected pid")
 			}
 		},
+		commandLine: func(pid int) ([]string, error) {
+			if pid != 300 {
+				return nil, errors.New("unexpected pid")
+			}
+			return []string{"/trusted/websudo", "/usr/bin/id", "-u"}, nil
+		},
+		workingDirectory: func(pid int) (string, error) {
+			if pid != 300 {
+				return "", errors.New("unexpected pid")
+			}
+			return "/home/alice/project", nil
+		},
 	}
 
-	if err := verifyAskpassProcessChainWith(nil, inspector); err != nil {
+	provenance, err := verifyAskpassProcessChainWith(nil, inspector)
+	if err != nil {
 		t.Fatalf("verifyAskpassProcessChainWith() error = %v", err)
 	}
 	if verified[100] != "/trusted/websudo-askpass" {
@@ -53,6 +67,12 @@ func TestVerifyAskpassProcessChainAcceptsTrustedChain(t *testing.T) {
 	}
 	if verified[300] != "/trusted/websudo" {
 		t.Fatalf("websudo executable = %q", verified[300])
+	}
+	if !reflect.DeepEqual(provenance.Command, []string{"/usr/bin/id", "-u"}) {
+		t.Fatalf("command = %#v", provenance.Command)
+	}
+	if provenance.CWD != "/home/alice/project" {
+		t.Fatalf("provenance = %#v", provenance)
 	}
 }
 
@@ -63,7 +83,7 @@ func TestVerifyAskpassProcessChainRejectsUnexpectedPeerUID(t *testing.T) {
 			return processauth.PeerCredentials{PID: 100, UID: uid + 1}, nil
 		},
 	}
-	if err := verifyAskpassProcessChainWith(nil, inspector); err == nil {
+	if _, err := verifyAskpassProcessChainWith(nil, inspector); err == nil {
 		t.Fatal("verifyAskpassProcessChainWith() error = nil, want uid rejection")
 	}
 }
@@ -77,7 +97,7 @@ func TestVerifyAskpassProcessChainRejectsNonPrivilegedSudoParent(t *testing.T) {
 		}
 		return processauth.UIDs{Real: uid, Effective: uid}, nil
 	}
-	if err := verifyAskpassProcessChainWith(nil, inspector); err == nil {
+	if _, err := verifyAskpassProcessChainWith(nil, inspector); err == nil {
 		t.Fatal("verifyAskpassProcessChainWith() error = nil, want sudo credential rejection")
 	}
 }
@@ -91,8 +111,30 @@ func TestVerifyAskpassProcessChainRejectsUntrustedWebsudoExecutable(t *testing.T
 		}
 		return nil
 	}
-	if err := verifyAskpassProcessChainWith(nil, inspector); err == nil {
+	if _, err := verifyAskpassProcessChainWith(nil, inspector); err == nil {
 		t.Fatal("verifyAskpassProcessChainWith() error = nil, want websudo executable rejection")
+	}
+}
+
+func TestVerifyAskpassProcessChainRejectsMissingProvenance(t *testing.T) {
+	uid := uint32(os.Getuid())
+	inspector := trustedChainInspector(uid)
+	inspector.commandLine = func(int) ([]string, error) {
+		return []string{"/trusted/websudo"}, nil
+	}
+	if _, err := verifyAskpassProcessChainWith(nil, inspector); err == nil {
+		t.Fatal("verifyAskpassProcessChainWith() error = nil, want missing command rejection")
+	}
+}
+
+func TestVerifyAskpassProcessChainRejectsUnreadableWorkingDirectory(t *testing.T) {
+	uid := uint32(os.Getuid())
+	inspector := trustedChainInspector(uid)
+	inspector.workingDirectory = func(int) (string, error) {
+		return "", errors.New("cwd unavailable")
+	}
+	if _, err := verifyAskpassProcessChainWith(nil, inspector); err == nil {
+		t.Fatal("verifyAskpassProcessChainWith() error = nil, want cwd error")
 	}
 }
 
@@ -124,6 +166,12 @@ func trustedChainInspector(uid uint32) askpassProcessInspector {
 			default:
 				return processauth.UIDs{}, errors.New("unexpected pid")
 			}
+		},
+		commandLine: func(int) ([]string, error) {
+			return []string{"/trusted/websudo", "/usr/bin/true"}, nil
+		},
+		workingDirectory: func(int) (string, error) {
+			return "/tmp", nil
 		},
 	}
 }

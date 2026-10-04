@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -80,5 +81,34 @@ func TestProcessUIDsReturnsCurrentUser(t *testing.T) {
 	}
 	if uids.Real != uint32(os.Getuid()) || uids.Effective != uint32(os.Geteuid()) {
 		t.Fatalf("uids = %#v, want real=%d effective=%d", uids, os.Getuid(), os.Geteuid())
+	}
+}
+
+func TestParseCommandLine(t *testing.T) {
+	got, err := ParseCommandLine([]byte("/usr/bin/websudo\x00/usr/bin/id\x00\x00"))
+	if err != nil {
+		t.Fatalf("ParseCommandLine() error = %v", err)
+	}
+	want := []string{"/usr/bin/websudo", "/usr/bin/id", ""}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ParseCommandLine() = %#v, want %#v", got, want)
+	}
+}
+
+func TestCommandLineAndWorkingDirectoryForCurrentProcess(t *testing.T) {
+	argv, err := CommandLine(os.Getpid())
+	if err != nil {
+		t.Fatalf("CommandLine() error = %v", err)
+	}
+	if len(argv) == 0 || argv[0] == "" {
+		t.Fatalf("CommandLine() = %#v, want non-empty argv", argv)
+	}
+
+	cwd, err := WorkingDirectory(os.Getpid())
+	if err != nil {
+		t.Fatalf("WorkingDirectory() error = %v", err)
+	}
+	if !filepath.IsAbs(cwd) {
+		t.Fatalf("WorkingDirectory() = %q, want absolute path", cwd)
 	}
 }

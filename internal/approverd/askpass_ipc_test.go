@@ -27,7 +27,9 @@ func TestAskpassIPCCompletesOverSingleConnection(t *testing.T) {
 		Config:       config.Config{ApprovalTimeoutSeconds: 60},
 		AskpassStore: store,
 	})
-	srv.verifyAskpassPeer = func(net.Conn) error { return nil }
+	srv.verifyAskpassPeer = func(net.Conn) (AskpassProvenance, error) {
+		return testProvenance(), nil
+	}
 	go func() { _ = srv.ServeAskpassIPC(listener) }()
 
 	client := testAskpassClient(t, socketPath)
@@ -37,6 +39,13 @@ func TestAskpassIPCCompletesOverSingleConnection(t *testing.T) {
 	}
 	if req.ID != "askpass-ipc" {
 		t.Fatalf("request ID = %q, want askpass-ipc", req.ID)
+	}
+	stored, err := store.Get(req.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if stored.Provenance.CWD != "/tmp" || len(stored.Provenance.Command) != 1 || stored.Provenance.Command[0] != "/usr/bin/true" {
+		t.Fatalf("stored provenance = %#v", stored.Provenance)
 	}
 	if _, err := store.Complete(req.ID, "secret"); err != nil {
 		t.Fatalf("Complete() error = %v", err)
@@ -60,7 +69,9 @@ func TestAskpassIPCDenyReturnsTerminalError(t *testing.T) {
 
 	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-deny-ipc" })
 	srv := NewServer(Dependencies{AskpassStore: store})
-	srv.verifyAskpassPeer = func(net.Conn) error { return nil }
+	srv.verifyAskpassPeer = func(net.Conn) (AskpassProvenance, error) {
+		return testProvenance(), nil
+	}
 	go func() { _ = srv.ServeAskpassIPC(listener) }()
 
 	client := testAskpassClient(t, socketPath)
@@ -86,7 +97,9 @@ func TestAskpassIPCExpirationReturnsTerminalError(t *testing.T) {
 
 	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-expire-ipc" })
 	srv := NewServer(Dependencies{AskpassStore: store})
-	srv.verifyAskpassPeer = func(net.Conn) error { return nil }
+	srv.verifyAskpassPeer = func(net.Conn) (AskpassProvenance, error) {
+		return testProvenance(), nil
+	}
 	store.setExpirationTimeout(20 * time.Millisecond)
 	go func() { _ = srv.ServeAskpassIPC(listener) }()
 
@@ -103,7 +116,9 @@ func TestAskpassIPCExpirationReturnsTerminalError(t *testing.T) {
 func TestAskpassIPCRejectsUnauthenticatedPeerBeforeCreatingRequest(t *testing.T) {
 	store := newAskpassStoreForTest(time.Now, func() string { return "should-not-be-created" })
 	srv := NewServer(Dependencies{AskpassStore: store})
-	srv.verifyAskpassPeer = func(net.Conn) error { return errors.New("unauthorized") }
+	srv.verifyAskpassPeer = func(net.Conn) (AskpassProvenance, error) {
+		return AskpassProvenance{}, errors.New("unauthorized")
+	}
 
 	serverConn, clientConn := net.Pipe()
 	done := make(chan struct{})
@@ -209,4 +224,8 @@ func testAskpassClient(t *testing.T, socketPath string) *askpass.Client {
 		t.Fatalf("Executable() error = %v", err)
 	}
 	return askpass.New(socketPath, executable)
+}
+
+func testProvenance() AskpassProvenance {
+	return AskpassProvenance{Command: []string{"/usr/bin/true"}, CWD: "/tmp"}
 }

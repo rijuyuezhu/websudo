@@ -23,7 +23,7 @@ type Dependencies struct {
 type Server struct {
 	config            config.Config
 	askpassStore      *AskpassStore
-	verifyAskpassPeer func(net.Conn) error
+	verifyAskpassPeer func(net.Conn) (AskpassProvenance, error)
 	passwordVerifier  PasswordVerifier
 	sessions          *SessionStore
 	staticFS          fs.FS
@@ -51,7 +51,7 @@ func NewServer(dep Dependencies) *Server {
 	return &Server{
 		config:       dep.Config,
 		askpassStore: askpassStore,
-		verifyAskpassPeer: func(conn net.Conn) error {
+		verifyAskpassPeer: func(conn net.Conn) (AskpassProvenance, error) {
 			return verifyAskpassProcessChain(conn)
 		},
 		passwordVerifier: passwordVerifier,

@@ -68,7 +68,11 @@ func (s *Server) ServeAskpassIPC(listener net.Listener) error {
 
 func (s *Server) handleAskpassIPC(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
-	if s.verifyAskpassPeer == nil || s.verifyAskpassPeer(conn) != nil {
+	if s.verifyAskpassPeer == nil {
+		return
+	}
+	provenance, err := s.verifyAskpassPeer(conn)
+	if err != nil {
 		return
 	}
 
@@ -83,7 +87,7 @@ func (s *Server) handleAskpassIPC(conn net.Conn) {
 		return
 	}
 
-	req := s.askpassStore.Create(incoming.Prompt)
+	req := s.askpassStore.Create(incoming.Prompt, provenance)
 	result, err := s.askpassStore.Result(req.ID)
 	if err != nil {
 		return
