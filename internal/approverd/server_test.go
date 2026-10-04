@@ -11,11 +11,7 @@ import (
 func TestBrowserAskpassLifecycle(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-browser" })
-	request := store.Create("Password:", AskpassProvenance{})
-	result, err := store.Result(request.ID)
-	if err != nil {
-		t.Fatalf("Result() error = %v", err)
-	}
+	_, result := store.Create("Password:", AskpassProvenance{})
 	srv := NewServer(Dependencies{
 		AskpassStore: store,
 		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) {
@@ -49,6 +45,39 @@ func TestBrowserAskpassLifecycle(t *testing.T) {
 	}
 }
 
+func TestCompletedAskpassRemainsReadableButCannotBeCompletedAgain(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-terminal-browser" })
+	_, _ = store.Create("Password:", AskpassProvenance{})
+	srv := NewServer(Dependencies{
+		AskpassStore: store,
+		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) {
+			return "session-terminal-browser", nil
+		}),
+	})
+
+	if _, err := store.Complete("askpass-terminal-browser", "secret"); err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/askpass/askpass-terminal-browser", nil)
+	addSessionCookie(t, srv, getReq)
+	getW := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(getW, getReq)
+	if getW.Code != http.StatusOK || !strings.Contains(getW.Body.String(), `"status":"completed"`) {
+		t.Fatalf("terminal GET status/body = %d %q", getW.Code, getW.Body.String())
+	}
+
+	completeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-terminal-browser/complete", strings.NewReader(`{"password":"again"}`))
+	completeReq.Header.Set("Content-Type", "application/json")
+	addSessionCookie(t, srv, completeReq)
+	completeW := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(completeW, completeReq)
+	if completeW.Code != http.StatusConflict {
+		t.Fatalf("repeated complete status = %d, want %d", completeW.Code, http.StatusConflict)
+	}
+}
+
 func TestAskpassCreateAndConsumeHTTPRoutesAreRemoved(t *testing.T) {
 	srv := NewServer(Dependencies{})
 
@@ -67,7 +96,7 @@ func TestAskpassCreateAndConsumeHTTPRoutesAreRemoved(t *testing.T) {
 func TestAskpassActionsRequireBrowserSession(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-auth" })
-	store.Create("Password:", AskpassProvenance{})
+	_, _ = store.Create("Password:", AskpassProvenance{})
 	srv := NewServer(Dependencies{
 		AskpassStore: store,
 		SessionStore: newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) {
@@ -95,7 +124,7 @@ func TestAskpassActionsRequireBrowserSession(t *testing.T) {
 
 func TestAskpassCompletionRejectsFormBody(t *testing.T) {
 	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-json-only" })
-	store.Create("Password:", AskpassProvenance{})
+	_, _ = store.Create("Password:", AskpassProvenance{})
 	srv := NewServer(Dependencies{AskpassStore: store})
 
 	req := httptest.NewRequest(
@@ -137,7 +166,7 @@ func TestDashboardRequiresSession(t *testing.T) {
 func TestDashboardReturnsAskpassPromptsWithSession(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	askpassStore := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-dashboard" })
-	askpassStore.Create("Password:", AskpassProvenance{
+	_, _ = askpassStore.Create("Password:", AskpassProvenance{
 		Command: []string{"/usr/bin/id", "-u"},
 		CWD:     "/home/alice/project",
 	})
