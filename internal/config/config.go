@@ -8,12 +8,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
-	WebAddr                string
-	ApprovalTimeoutSeconds int
-	SudoPath               string
+	WebAddr         string
+	ApprovalTimeout time.Duration
+	SudoPath        string
 }
 
 const (
@@ -31,15 +32,19 @@ func load(path string) (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
-		WebAddr:                "127.0.0.1:17878",
-		ApprovalTimeoutSeconds: 600,
-		SudoPath:               DefaultSudoPath,
+		WebAddr:         "127.0.0.1:17878",
+		ApprovalTimeout: 10 * time.Minute,
+		SudoPath:        DefaultSudoPath,
 	}
 	if value, ok := configString(values, "WEBSUDO_WEB_ADDR"); ok {
 		cfg.WebAddr = value
 	}
-	if value, ok := configInt(values, "WEBSUDO_APPROVAL_TIMEOUT_SECONDS"); ok {
-		cfg.ApprovalTimeoutSeconds = value
+	if value, ok := values["WEBSUDO_APPROVAL_TIMEOUT_SECONDS"]; ok {
+		seconds, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || seconds <= 0 || seconds > int64((1<<63-1)/time.Second) {
+			return Config{}, fmt.Errorf("WEBSUDO_APPROVAL_TIMEOUT_SECONDS must be a positive integer that fits a duration: %q", value)
+		}
+		cfg.ApprovalTimeout = time.Duration(seconds) * time.Second
 	}
 	if value, ok := configString(values, "WEBSUDO_SUDO_PATH"); ok {
 		if !filepath.IsAbs(value) {
@@ -94,16 +99,4 @@ func configString(values map[string]string, key string) (string, bool) {
 		return "", false
 	}
 	return value, true
-}
-
-func configInt(values map[string]string, key string) (int, bool) {
-	value, ok := configString(values, key)
-	if !ok {
-		return 0, false
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return 0, false
-	}
-	return parsed, true
 }

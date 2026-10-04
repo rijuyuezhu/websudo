@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"time"
 
 	"websudo/internal/askpass"
 	"websudo/internal/config"
@@ -24,7 +23,7 @@ func main() {
 		os.Exit(1)
 	}
 	baseURL := "http://" + cfg.WebAddr
-	ctx, cancel := context.WithTimeout(context.Background(), approvalTimeout(cfg))
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.ApprovalTimeout)
 	defer cancel()
 
 	approverdExecutable, err := processauth.SiblingExecutable("websudo-approverd")
@@ -49,11 +48,4 @@ func main() {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-}
-
-func approvalTimeout(cfg config.Config) time.Duration {
-	if cfg.ApprovalTimeoutSeconds > 0 {
-		return time.Duration(cfg.ApprovalTimeoutSeconds) * time.Second
-	}
-	return 10 * time.Minute
 }
