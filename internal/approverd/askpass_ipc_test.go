@@ -2,6 +2,7 @@ package approverd
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -26,9 +27,10 @@ func TestAskpassIPCCompletesOverSingleConnection(t *testing.T) {
 		Config:       config.Config{ApprovalTimeoutSeconds: 60},
 		AskpassStore: store,
 	})
+	srv.verifyAskpassPeer = func(net.Conn) error { return nil }
 	go func() { _ = srv.ServeAskpassIPC(listener) }()
 
-	client := askpass.New(socketPath)
+	client := testAskpassClient(t, socketPath)
 	req, err := client.Create(context.Background(), "Password:")
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -58,9 +60,10 @@ func TestAskpassIPCDenyReturnsTerminalError(t *testing.T) {
 
 	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-deny-ipc" })
 	srv := NewServer(Dependencies{AskpassStore: store})
+	srv.verifyAskpassPeer = func(net.Conn) error { return nil }
 	go func() { _ = srv.ServeAskpassIPC(listener) }()
 
-	client := askpass.New(socketPath)
+	client := testAskpassClient(t, socketPath)
 	req, err := client.Create(context.Background(), "Password:")
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -83,16 +86,37 @@ func TestAskpassIPCExpirationReturnsTerminalError(t *testing.T) {
 
 	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-expire-ipc" })
 	srv := NewServer(Dependencies{AskpassStore: store})
+	srv.verifyAskpassPeer = func(net.Conn) error { return nil }
 	store.setExpirationTimeout(20 * time.Millisecond)
 	go func() { _ = srv.ServeAskpassIPC(listener) }()
 
-	client := askpass.New(socketPath)
+	client := testAskpassClient(t, socketPath)
 	req, err := client.Create(context.Background(), "Password:")
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
 	if _, err := client.WaitForPassword(context.Background(), req); err == nil || !strings.Contains(err.Error(), "expired") {
 		t.Fatalf("WaitForPassword() error = %v, want expired", err)
+	}
+}
+
+func TestAskpassIPCRejectsUnauthenticatedPeerBeforeCreatingRequest(t *testing.T) {
+	store := newAskpassStoreForTest(time.Now, func() string { return "should-not-be-created" })
+	srv := NewServer(Dependencies{AskpassStore: store})
+	srv.verifyAskpassPeer = func(net.Conn) error { return errors.New("unauthorized") }
+
+	serverConn, clientConn := net.Pipe()
+	done := make(chan struct{})
+	go func() {
+		srv.handleAskpassIPC(serverConn)
+		close(done)
+	}()
+
+	_, _ = clientConn.Write([]byte("{\"prompt\":\"Password:\"}\n"))
+	_ = clientConn.Close()
+	<-done
+	if pending := store.ListPending(); len(pending) != 0 {
+		t.Fatalf("pending requests = %#v, want none", pending)
 	}
 }
 
@@ -176,4 +200,13 @@ func TestListenAskpassIPCReplacesStaleSocket(t *testing.T) {
 		t.Fatalf("ListenAskpassIPC(stale) error = %v", err)
 	}
 	defer func() { _ = listener.Close() }()
+}
+
+func testAskpassClient(t *testing.T, socketPath string) *askpass.Client {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("Executable() error = %v", err)
+	}
+	return askpass.New(socketPath, executable)
 }

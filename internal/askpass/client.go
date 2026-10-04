@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+
+	"websudo/internal/processauth"
 )
 
 type Request struct {
@@ -28,11 +31,12 @@ type IPCResult struct {
 }
 
 type Client struct {
-	socketPath string
+	socketPath          string
+	approverdExecutable string
 }
 
-func New(socketPath string) *Client {
-	return &Client{socketPath: socketPath}
+func New(socketPath, approverdExecutable string) *Client {
+	return &Client{socketPath: socketPath, approverdExecutable: approverdExecutable}
 }
 
 func (c *Client) Create(ctx context.Context, prompt string) (Request, error) {
@@ -49,6 +53,9 @@ func (c *Client) Create(ctx context.Context, prompt string) (Request, error) {
 
 	stop := closeOnContext(ctx, conn)
 	defer func() { _ = stop() }()
+	if err := verifyApproverdPeer(conn, c.approverdExecutable); err != nil {
+		return Request{}, fmt.Errorf("authenticate websudo approval daemon: %w", err)
+	}
 
 	if err := json.NewEncoder(conn).Encode(IPCRequest{Prompt: prompt}); err != nil {
 		return Request{}, fmt.Errorf("send askpass request: %w", err)
@@ -98,6 +105,17 @@ func (c *Client) WaitForPassword(ctx context.Context, req Request) (string, erro
 		return "", errors.New(result.Error)
 	}
 	return result.Password, nil
+}
+
+func verifyApproverdPeer(conn net.Conn, expectedExecutable string) error {
+	cred, err := processauth.UnixPeerCredentials(conn)
+	if err != nil {
+		return err
+	}
+	if cred.UID != uint32(os.Getuid()) {
+		return errors.New("approval daemon has unexpected uid")
+	}
+	return processauth.VerifyExecutable(cred.PID, expectedExecutable)
 }
 
 func closeOnContext(ctx context.Context, conn net.Conn) func() bool {
