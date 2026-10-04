@@ -84,6 +84,28 @@ func TestFrontendReportsMissingAssets(t *testing.T) {
 	}
 }
 
+func TestBrowserSecurityHeaders(t *testing.T) {
+	srv := NewServer(Dependencies{StaticFS: fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte(`<!doctype html><div id="app"></div>`)},
+	}})
+
+	for _, path := range []string{"/", "/api/session"} {
+		t.Run(path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			srv.Routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+			if got := w.Header().Get("Content-Security-Policy"); !strings.Contains(got, "frame-ancestors 'none'") {
+				t.Fatalf("Content-Security-Policy = %q, want frame-ancestors 'none'", got)
+			}
+			if got := w.Header().Get("X-Frame-Options"); got != "DENY" {
+				t.Fatalf("X-Frame-Options = %q, want DENY", got)
+			}
+			if strings.HasPrefix(path, "/api/") && w.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("Cache-Control = %q, want no-store", w.Header().Get("Cache-Control"))
+			}
+		})
+	}
+}
+
 func TestEmbeddedFrontendAssets(t *testing.T) {
 	frontend := embeddedFrontendFS()
 	for _, name := range []string{"index.html", "styles.css", "app.js"} {

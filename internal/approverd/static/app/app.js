@@ -7,18 +7,23 @@ class ApiError extends Error {
   }
 }
 
+const sessionKey = 'websudo_session'
 const app = document.getElementById('app')
 const logoutButton = document.getElementById('logout')
 
 async function request(path, options = {}) {
+  const token = window.localStorage.getItem(sessionKey)
   const response = await fetch(path, {
-    credentials: 'same-origin',
     ...options,
     headers: {
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
   })
+  if (response.status === 401 && path !== '/api/login') {
+    window.localStorage.removeItem(sessionKey)
+  }
   if (!response.ok) throw new ApiError(response.status)
   if (response.status === 204) return undefined
   const text = await response.text()
@@ -56,6 +61,7 @@ async function logout() {
   } catch {
     return
   }
+  window.localStorage.removeItem(sessionKey)
   replace('/login')
 }
 
@@ -93,10 +99,11 @@ function renderLogin() {
     hideError(error)
     updateButton()
     try {
-      await request('/api/login', {
+      const session = await request('/api/login', {
         method: 'POST',
         body: JSON.stringify({ password: input.value }),
       })
+      window.localStorage.setItem(sessionKey, session.token)
       input.value = ''
       replace('/')
     } catch (err) {
