@@ -87,11 +87,7 @@ func (s *Server) handleAskpassIPC(conn net.Conn) {
 		return
 	}
 
-	req := s.askpassStore.Create(incoming.Prompt, provenance)
-	result, err := s.askpassStore.Result(req.ID)
-	if err != nil {
-		return
-	}
+	req, result := s.askpassStore.Create(incoming.Prompt, provenance)
 	encoder := json.NewEncoder(conn)
 	if err := encoder.Encode(askpass.IPCCreated{ID: req.ID}); err != nil {
 		return
