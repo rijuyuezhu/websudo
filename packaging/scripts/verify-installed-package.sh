@@ -11,20 +11,9 @@ if [ "$#" -ne 1 ]; then
 fi
 
 expected_arch=$1
-test_uid=${WEBSUDO_TEST_UID:-1001}
-test_user=${WEBSUDO_TEST_USER:-websudo-test}
 user_unit=/usr/lib/systemd/user/websudo-approverd.service
 env_example=/etc/websudo/websudo.env.example
 readme=/usr/share/websudo/README.md
-
-if getent passwd "$test_user" >/dev/null 2>&1; then
-	actual_uid=$(id -u "$test_user")
-	if [ "$actual_uid" != "$test_uid" ]; then
-		die "User ${test_user} has uid ${actual_uid}, expected ${test_uid}"
-	fi
-else
-	useradd -u "$test_uid" -m -s /bin/sh "$test_user"
-fi
 
 check_binary() {
 	path=$1
@@ -49,7 +38,9 @@ grep -Fq 'systemctl --user enable --now websudo-approverd.service' "$readme" || 
 grep -Fq 'systemctl --user try-restart websudo-approverd.service' "$readme" || die "README missing user service upgrade command"
 grep -Fq 'systemctl --user disable --now websudo-approverd.service' "$readme" || die "README missing user service uninstall command"
 
-systemd-analyze --user verify "$user_unit"
+runtime_dir=$(mktemp -d)
+trap 'rm -rf "$runtime_dir"' EXIT HUP INT TERM
+XDG_RUNTIME_DIR="$runtime_dir" systemd-analyze --user verify "$user_unit"
 
 remove_package() {
 	if command -v apt-get >/dev/null 2>&1; then
