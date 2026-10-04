@@ -7,17 +7,15 @@ die() {
 }
 
 usage() {
-	die "Usage: $0 <debian|fedora|arch> <expected-architecture-substring> [image]"
+	die "Usage: $0 <debian|fedora> <expected-architecture-substring>"
 }
 
-if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
+if [ "$#" -ne 2 ]; then
 	usage
 fi
 
 distro=$1
 expected_arch=$2
-image=${3:-}
-
 command -v docker >/dev/null 2>&1 || die "Required command not found: docker"
 
 dist_dir=${WEBSUDO_DIST_DIR:-dist}
@@ -40,10 +38,6 @@ case "$distro" in
 	fedora)
 		image=${image:-fedora:latest}
 		install_cmd='dnf -y install file; set -- /dist/*.rpm; [ -e "$1" ] || { printf "%s\n" "No .rpm package found in /dist" >&2; exit 1; }; dnf -y install "$1"'
-		;;
-	arch)
-		image=${image:-archlinux:latest}
-		install_cmd='pacman -Syu --disable-sandbox --noconfirm --needed file; set -- /dist/*.pkg.tar.*; [ -e "$1" ] || { printf "%s\n" "No Arch package found in /dist" >&2; exit 1; }; pacman -U --disable-sandbox --noconfirm "$1"'
 		;;
 	*)
 		usage

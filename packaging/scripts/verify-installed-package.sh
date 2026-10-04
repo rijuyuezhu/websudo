@@ -42,6 +42,16 @@ runtime_dir=$(mktemp -d)
 trap 'rm -rf "$runtime_dir"' EXIT HUP INT TERM
 XDG_RUNTIME_DIR="$runtime_dir" systemd-analyze --user verify "$user_unit"
 
+if command -v dpkg-query >/dev/null 2>&1; then
+	depends=$(dpkg-query -W -f='${Depends}' websudo)
+	case "$depends" in
+		*"sudo | sudo-rs"*) ;;
+		*) die "Deb package dependency does not allow sudo or sudo-rs: $depends" ;;
+	esac
+elif command -v rpm >/dev/null 2>&1; then
+	rpm -q --requires websudo | grep -Fxq '(sudo or sudo-rs)' || die 'RPM dependency does not allow sudo or sudo-rs'
+fi
+
 remove_package() {
 	if command -v apt-get >/dev/null 2>&1; then
 		DEBIAN_FRONTEND=noninteractive apt-get remove -y websudo
@@ -49,10 +59,6 @@ remove_package() {
 	fi
 	if command -v dnf >/dev/null 2>&1; then
 		dnf -y remove websudo
-		return
-	fi
-	if command -v pacman >/dev/null 2>&1; then
-		pacman -R --noconfirm websudo
 		return
 	fi
 	die 'No supported package manager found for removal verification'

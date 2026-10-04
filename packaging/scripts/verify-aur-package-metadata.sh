@@ -11,7 +11,7 @@ require_contains() {
 	pattern=$2
 	description=$3
 
-	grep -Fq "$pattern" "$file" || die "${file} missing ${description}: ${pattern}"
+	grep -Fq -- "$pattern" "$file" || die "${file} missing ${description}: ${pattern}"
 }
 
 install_script=packaging/aur/websudo-bin.install
@@ -23,6 +23,9 @@ workflow=.github/workflows/ci.yml
 require_contains "$pkgbuild_template" 'install=websudo-bin.install' 'AUR install hook reference'
 require_contains "$pkgbuild_template" 'packaging/websudo.env.example' 'environment example install rule'
 require_contains "$pkgbuild_template" '/usr/share/websudo/README.md' 'cross-distro README install rule'
+require_contains "$pkgbuild_template" "depends=('systemd')" 'AUR hard dependency policy'
+require_contains "$pkgbuild_template" "'sudo: default sudo-compatible executable'" 'traditional sudo optional dependency'
+require_contains "$pkgbuild_template" "'sudo-rs: alternative sudo-compatible executable; configure WEBSUDO_SUDO_PATH'" 'sudo-rs optional dependency'
 require_contains "$install_script" 'post_install()' 'post-install hook'
 require_contains "$install_script" 'post_upgrade()' 'post-upgrade hook'
 require_contains "$install_script" 'systemctl --user daemon-reload' 'user daemon reload instruction'
