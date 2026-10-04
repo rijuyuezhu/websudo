@@ -65,9 +65,8 @@ func Run(ctx context.Context, dep Dependencies, argv []string, cwd string) (int,
 }
 
 func fillConfig(cfg config.Config) config.Config {
-	defaults := config.Default()
 	if strings.TrimSpace(cfg.SudoPath) == "" {
-		cfg.SudoPath = defaults.SudoPath
+		cfg.SudoPath = config.DefaultSudoPath
 	}
 	return cfg
 }
