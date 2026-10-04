@@ -54,7 +54,7 @@ systemctl --user disable --now websudo-approverd.service
 
 ## Frontend
 
-The three-view approval UI is embedded directly from `internal/approverd/static/app/` (`index.html`, `styles.css`, and `app.js`). There is no separate frontend build step or Node dependency.
+The three-view approval UI is embedded directly from `internal/approverd/static/app/` (`index.html`, `styles.css`, and `app.js`). There is no separate frontend build step or Node dependency. Browser sessions are stored by the exact websudo origin and sent as bearer authorization rather than a host-scoped HTTP cookie.
 
 ## Manual Test
 

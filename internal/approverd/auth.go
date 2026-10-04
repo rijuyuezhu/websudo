@@ -12,8 +12,6 @@ import (
 	"time"
 )
 
-const sessionCookieName = "websudo_session"
-
 type PasswordVerifier interface {
 	VerifyPassword(context.Context, string) error
 }
@@ -89,13 +87,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	id, expiresAt, err := s.sessions.Create()
+	id, _, err := s.sessions.Create()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, sessionCookie(id, expiresAt))
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, struct {
+		Token string `json:"token"`
+	}{Token: id})
 }
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
@@ -127,10 +126,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnsupportedMediaType)
 		return
 	}
-	if cookie, err := r.Cookie(sessionCookieName); err == nil {
-		s.sessions.Delete(cookie.Value)
+	if id, ok := sessionToken(r); ok {
+		s.sessions.Delete(id)
 	}
-	http.SetCookie(w, expiredSessionCookie())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -143,33 +141,16 @@ func (s *Server) requireSession(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (s *Server) hasSession(r *http.Request) bool {
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		return false
-	}
-	return s.sessions.Valid(cookie.Value)
+	id, ok := sessionToken(r)
+	return ok && s.sessions.Valid(id)
 }
 
-func sessionCookie(value string, expiresAt time.Time) *http.Cookie {
-	return &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    value,
-		Path:     "/",
-		MaxAge:   int(sessionTTL / time.Second),
-		Expires:  expiresAt,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+func sessionToken(r *http.Request) (string, bool) {
+	const prefix = "Bearer "
+	authorization := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authorization, prefix) {
+		return "", false
 	}
-}
-
-func expiredSessionCookie() *http.Cookie {
-	return &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		Expires:  time.Unix(0, 0).UTC(),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	}
+	token := strings.TrimSpace(strings.TrimPrefix(authorization, prefix))
+	return token, token != ""
 }

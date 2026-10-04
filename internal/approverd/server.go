@@ -70,7 +70,18 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/askpass/", s.handleAskpassAction)
 	mux.HandleFunc("/api/", http.NotFound)
 	mux.HandleFunc("/", s.handleFrontend)
-	return mux
+	return browserSecurityHeaders(mux)
+}
+
+func browserSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		w.Header().Set("X-Frame-Options", "DENY")
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

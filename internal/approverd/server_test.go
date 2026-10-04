@@ -20,7 +20,7 @@ func TestBrowserAskpassLifecycle(t *testing.T) {
 	})
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/askpass/askpass-browser", nil)
-	addSessionCookie(t, srv, getReq)
+	addSessionAuthorization(t, srv, getReq)
 	getW := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(getW, getReq)
 	if getW.Code != http.StatusOK {
@@ -32,7 +32,7 @@ func TestBrowserAskpassLifecycle(t *testing.T) {
 
 	completeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-browser/complete", strings.NewReader("{\"password\":\"secret\"}"))
 	completeReq.Header.Set("Content-Type", "application/json")
-	addSessionCookie(t, srv, completeReq)
+	addSessionAuthorization(t, srv, completeReq)
 	completeW := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(completeW, completeReq)
 	if completeW.Code != http.StatusAccepted {
@@ -61,7 +61,7 @@ func TestCompletedAskpassRemainsReadableButCannotBeCompletedAgain(t *testing.T) 
 	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/askpass/askpass-terminal-browser", nil)
-	addSessionCookie(t, srv, getReq)
+	addSessionAuthorization(t, srv, getReq)
 	getW := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(getW, getReq)
 	if getW.Code != http.StatusOK || !strings.Contains(getW.Body.String(), `"status":"completed"`) {
@@ -70,7 +70,7 @@ func TestCompletedAskpassRemainsReadableButCannotBeCompletedAgain(t *testing.T) 
 
 	completeReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-terminal-browser/complete", strings.NewReader(`{"password":"again"}`))
 	completeReq.Header.Set("Content-Type", "application/json")
-	addSessionCookie(t, srv, completeReq)
+	addSessionAuthorization(t, srv, completeReq)
 	completeW := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(completeW, completeReq)
 	if completeW.Code != http.StatusConflict {
@@ -114,7 +114,7 @@ func TestAskpassActionsRequireBrowserSession(t *testing.T) {
 
 	authReq := httptest.NewRequest(http.MethodPost, "/api/askpass/askpass-auth/complete", strings.NewReader("{\"password\":\"secret\"}"))
 	authReq.Header.Set("Content-Type", "application/json")
-	addSessionCookie(t, srv, authReq)
+	addSessionAuthorization(t, srv, authReq)
 	authW := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(authW, authReq)
 	if authW.Code != http.StatusAccepted {
@@ -133,7 +133,7 @@ func TestAskpassCompletionRejectsFormBody(t *testing.T) {
 		strings.NewReader("password=secret"),
 	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	addSessionCookie(t, srv, req)
+	addSessionAuthorization(t, srv, req)
 	w := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(w, req)
 	if w.Code != http.StatusUnsupportedMediaType {
@@ -191,7 +191,7 @@ func TestDashboardReturnsAskpassPromptsWithSession(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
-	addSessionCookie(t, srv, req)
+	addSessionAuthorization(t, srv, req)
 	w := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -215,11 +215,11 @@ func TestDashboardReturnsAskpassPromptsWithSession(t *testing.T) {
 	}
 }
 
-func addSessionCookie(t *testing.T, srv *Server, req *http.Request) {
+func addSessionAuthorization(t *testing.T, srv *Server, req *http.Request) {
 	t.Helper()
-	id, expiresAt, err := srv.sessions.Create()
+	id, _, err := srv.sessions.Create()
 	if err != nil {
 		t.Fatalf("Create session error = %v", err)
 	}
-	req.AddCookie(sessionCookie(id, expiresAt))
+	req.Header.Set("Authorization", "Bearer "+id)
 }

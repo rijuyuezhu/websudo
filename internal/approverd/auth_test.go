@@ -27,7 +27,7 @@ func (f *fakePasswordVerifier) VerifyPassword(_ context.Context, password string
 	return f.err
 }
 
-func TestLoginSetsSessionCookie(t *testing.T) {
+func TestLoginReturnsSessionTokenWithoutCookie(t *testing.T) {
 	now := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
 	verifier := &fakePasswordVerifier{wantPassword: "machine-secret"}
 	srv := NewServer(Dependencies{
@@ -42,30 +42,17 @@ func TestLoginSetsSessionCookie(t *testing.T) {
 
 	srv.Routes().ServeHTTP(w, req)
 
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusNoContent)
-	}
-	if w.Body.Len() != 0 {
-		t.Fatalf("login body = %q, want empty", w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 	if !verifier.called {
 		t.Fatal("password verifier was not called")
 	}
-	cookie := findCookie(t, w.Result().Cookies(), sessionCookieName)
-	if cookie.Value != "session-login" {
-		t.Fatalf("cookie value = %q, want %q", cookie.Value, "session-login")
+	if got := w.Header().Get("Set-Cookie"); got != "" {
+		t.Fatalf("Set-Cookie = %q, want empty", got)
 	}
-	if !cookie.HttpOnly {
-		t.Fatal("session cookie must be HttpOnly")
-	}
-	if cookie.SameSite != http.SameSiteLaxMode {
-		t.Fatalf("SameSite = %v, want Lax", cookie.SameSite)
-	}
-	if cookie.Path != "/" {
-		t.Fatalf("Path = %q, want /", cookie.Path)
-	}
-	if cookie.MaxAge != int((72*time.Hour)/time.Second) {
-		t.Fatalf("MaxAge = %d, want 259200", cookie.MaxAge)
+	if !strings.Contains(w.Body.String(), `"token":"session-login"`) {
+		t.Fatalf("login body = %q, want session token", w.Body.String())
 	}
 }
 
@@ -165,7 +152,7 @@ func TestSessionEndpointReflectsAuthState(t *testing.T) {
 	}
 
 	authReq := httptest.NewRequest(http.MethodGet, "/api/session", nil)
-	authReq.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "session-active"})
+	authReq.Header.Set("Authorization", "Bearer session-active")
 	auth := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(auth, authReq)
 	if auth.Code != http.StatusNoContent {
@@ -176,7 +163,25 @@ func TestSessionEndpointReflectsAuthState(t *testing.T) {
 	}
 }
 
-func TestLogoutDeletesSessionAndExpiresCookie(t *testing.T) {
+func TestSessionEndpointRejectsCookieCredential(t *testing.T) {
+	now := time.Date(2026, 6, 2, 12, 1, 0, 0, time.UTC)
+	store := newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-cookie", nil })
+	if _, _, err := store.Create(); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	srv := NewServer(Dependencies{SessionStore: store})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/session", nil)
+	req.AddCookie(&http.Cookie{Name: "websudo_session", Value: "session-cookie"})
+	w := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("cookie-only status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestLogoutDeletesSession(t *testing.T) {
 	now := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
 	store := newSessionStoreForTest(72*time.Hour, func() time.Time { return now }, func() (string, error) { return "session-logout", nil })
 	if _, _, err := store.Create(); err != nil {
@@ -186,7 +191,7 @@ func TestLogoutDeletesSessionAndExpiresCookie(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/logout", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "session-logout"})
+	req.Header.Set("Authorization", "Bearer session-logout")
 	w := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(w, req)
@@ -200,10 +205,6 @@ func TestLogoutDeletesSessionAndExpiresCookie(t *testing.T) {
 	if store.Valid("session-logout") {
 		t.Fatal("logout should delete server-side session")
 	}
-	cookie := findCookie(t, w.Result().Cookies(), sessionCookieName)
-	if cookie.MaxAge != -1 || cookie.Value != "" {
-		t.Fatalf("expired cookie = %#v, want empty value and MaxAge -1", cookie)
-	}
 }
 
 func TestLogoutRejectsNonJSONContentType(t *testing.T) {
@@ -216,7 +217,7 @@ func TestLogoutRejectsNonJSONContentType(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/logout", strings.NewReader("logout=1"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "session-logout-csrf"})
+	req.Header.Set("Authorization", "Bearer session-logout-csrf")
 	w := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(w, req)
@@ -306,15 +307,4 @@ func TestSudoPasswordVerifierRejectsPasswordlessSudo(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("calls = %d, want 1", calls)
 	}
-}
-
-func findCookie(t *testing.T, cookies []*http.Cookie, name string) *http.Cookie {
-	t.Helper()
-	for _, cookie := range cookies {
-		if cookie.Name == name {
-			return cookie
-		}
-	}
-	t.Fatalf("cookie %q not found in %#v", name, cookies)
-	return nil
 }
