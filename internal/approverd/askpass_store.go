@@ -179,30 +179,6 @@ func (s *AskpassStore) Deny(id string) (AskpassRequest, error) {
 	return entry.request, nil
 }
 
-func (s *AskpassStore) ExpireBefore(cutoff time.Time) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	expired := 0
-	for _, id := range s.order {
-		entry, ok := s.items[id]
-		if !ok || entry.request.CreatedAt.After(cutoff) {
-			continue
-		}
-		if entry.request.Status != AskpassPending && entry.request.Status != AskpassCompleted {
-			continue
-		}
-		wasPending := entry.request.Status == AskpassPending
-		entry.request.Status = AskpassExpired
-		s.items[id] = entry
-		if wasPending {
-			entry.result <- askpassResult{status: AskpassExpired}
-		}
-		expired++
-	}
-	return expired
-}
-
 func (s *AskpassStore) scheduleExpirationLocked(req AskpassRequest) {
 	timeout := s.expirationTimeout
 	if timeout <= 0 {

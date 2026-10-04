@@ -85,24 +85,6 @@ func TestAskpassStoreDenyDeliversTerminalResult(t *testing.T) {
 	}
 }
 
-func TestAskpassStoreExpirePendingDeliversTerminalResult(t *testing.T) {
-	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-expire" })
-	req := store.Create("Password:", AskpassProvenance{})
-	result, err := store.Result(req.ID)
-	if err != nil {
-		t.Fatalf("Result() error = %v", err)
-	}
-
-	if expired := store.ExpireBefore(now.Add(time.Second)); expired != 1 {
-		t.Fatalf("expired = %d, want 1", expired)
-	}
-	outcome := <-result
-	if outcome.status != AskpassExpired || outcome.password != "" {
-		t.Fatalf("outcome = %#v, want expired without password", outcome)
-	}
-}
-
 func TestAskpassStoreRejectsRepeatedTerminalActions(t *testing.T) {
 	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-terminal" })
 	store.Create("Password:", AskpassProvenance{})

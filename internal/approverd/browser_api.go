@@ -18,7 +18,6 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if !s.requireSession(w, r) {
 		return
 	}
-	s.expireAskpassRequests()
 
 	writeJSON(w, http.StatusOK, dashboardResponse{
 		AskpassPending: s.askpassStore.ListPending(),
