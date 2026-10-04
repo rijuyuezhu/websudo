@@ -93,6 +93,33 @@ func TestAskpassActionsRequireBrowserSession(t *testing.T) {
 	}
 }
 
+func TestAskpassCompletionRejectsFormBody(t *testing.T) {
+	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-json-only" })
+	store.Create("Password:", AskpassProvenance{})
+	srv := NewServer(Dependencies{AskpassStore: store})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/askpass/askpass-json-only/complete",
+		strings.NewReader("password=secret"),
+	)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	addSessionCookie(t, srv, req)
+	w := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(w, req)
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("complete form status = %d, want %d", w.Code, http.StatusUnsupportedMediaType)
+	}
+
+	pending, err := store.Get("askpass-json-only")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if pending.Status != AskpassPending {
+		t.Fatalf("request status = %q, want pending", pending.Status)
+	}
+}
+
 func TestDashboardRequiresSession(t *testing.T) {
 	srv := NewServer(Dependencies{
 		SessionStore: newSessionStoreForTest(72*time.Hour, time.Now, func() (string, error) {

@@ -57,12 +57,14 @@ func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
 
 	switch action {
 	case "complete":
-		password, err := askpassPassword(r)
-		if err != nil {
+		var body struct {
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if _, err := s.askpassStore.Complete(id, password); err != nil {
+		if _, err := s.askpassStore.Complete(id, body.Password); err != nil {
 			w.WriteHeader(askpassWriteStatus(err))
 			return
 		}
@@ -88,23 +90,6 @@ func askpassActionFromPath(path string) (string, string, bool) {
 		return "", "", false
 	}
 	return parts[0], parts[1], true
-}
-
-func askpassPassword(r *http.Request) (string, error) {
-	if isJSONRequest(r) {
-		var body struct {
-			Password string `json:"password"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			return "", err
-		}
-		return body.Password, nil
-	}
-
-	if err := r.ParseForm(); err != nil {
-		return "", err
-	}
-	return r.Form.Get("password"), nil
 }
 
 func askpassWriteStatus(err error) int {
