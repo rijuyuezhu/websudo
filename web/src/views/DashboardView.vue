@@ -26,7 +26,7 @@ async function load(initial = false) {
       await router.replace('/login')
       return
     }
-    error.value = 'Unable to load password prompts.'
+    error.value = 'Unable to load requests.'
   } finally {
     if (initial) loading.value = false
     polling = false
@@ -49,19 +49,13 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="grid">
-    <div>
-      <p class="eyebrow">Approval queue</p>
-      <h1>Local websudo password prompts</h1>
-      <p class="muted">
-        Password prompts appear here when sudo invokes websudo-askpass.
-      </p>
-    </div>
+    <h1>Requests</h1>
 
     <p v-if="error" class="notice error">{{ error }}</p>
-    <p v-if="loading" class="muted">Loading prompts...</p>
+    <p v-if="loading" class="muted">Loading requests...</p>
 
     <section class="panel">
-      <h2>Password Prompts</h2>
+      <h2>Pending</h2>
       <div v-if="askpassPending.length" class="cards">
         <RouterLink
           v-for="item in askpassPending"
@@ -70,15 +64,15 @@ onBeforeUnmount(() => {
           :to="`/askpass/${item.id}`"
         >
           <span class="status">{{ item.status }}</span>
-          <h3>{{ item.id }}</h3>
-          <pre>{{ item.prompt }}</pre>
+          <h3>{{ formatCommand(item.provenance.command) }}</h3>
+          <p class="muted">{{ item.provenance.cwd }}</p>
         </RouterLink>
       </div>
-      <p v-else class="muted">No pending password prompts.</p>
+      <p v-else class="muted">No pending requests.</p>
     </section>
 
     <section class="panel">
-      <h2>Recent Requests</h2>
+      <h2>Recent</h2>
       <div v-if="askpassRecent.length" class="cards">
         <RouterLink
           v-for="item in askpassRecent"

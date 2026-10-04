@@ -30,12 +30,7 @@ async function submit() {
 <template>
   <section class="login-wrap">
     <form class="login-card" @submit.prevent="submit">
-      <p class="eyebrow">Local approval</p>
-      <h1>Authorize this browser for websudo</h1>
-      <p class="muted">
-        Enter the current machine password. Approval actions will stay unlocked
-        in this browser for up to 72 hours.
-      </p>
+      <h1>Sign in to websudo</h1>
 
       <label class="field">
         <span>Password</span>
@@ -53,7 +48,7 @@ async function submit() {
         type="submit"
         :disabled="loading || password.length === 0"
       >
-        {{ loading ? 'Checking...' : 'Login' }}
+        {{ loading ? 'Signing in...' : 'Sign in' }}
       </button>
     </form>
   </section>
