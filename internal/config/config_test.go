@@ -156,6 +156,42 @@ func TestLoadRejectsNonLoopbackWebAddr(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsUnknownConfigKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "websudo.env")
+	if err := os.WriteFile(path, []byte("WEBSUDO_UNKNOWN=value\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := load(path)
+	if err == nil || !strings.Contains(err.Error(), `unknown websudo config key on line 1: "WEBSUDO_UNKNOWN"`) {
+		t.Fatalf("load() error = %v, want unknown-key error", err)
+	}
+}
+
+func TestLoadRejectsMalformedConfigLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "websudo.env")
+	if err := os.WriteFile(path, []byte("# comment\nWEBSUDO_WEB_ADDR\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := load(path)
+	if err == nil || !strings.Contains(err.Error(), "invalid websudo config line 2") {
+		t.Fatalf("load() error = %v, want malformed-line error", err)
+	}
+}
+
+func TestLoadRejectsEmptySudoPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "websudo.env")
+	if err := os.WriteFile(path, []byte("WEBSUDO_SUDO_PATH=\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := load(path)
+	if err == nil || !strings.Contains(err.Error(), "WEBSUDO_SUDO_PATH must be an absolute path") {
+		t.Fatalf("load() error = %v, want absolute-path error", err)
+	}
+}
+
 func TestLoadRejectsInvalidTimeout(t *testing.T) {
 	for _, value := range []string{"0", "-1", "invalid", "", "9223372037"} {
 		t.Run(value, func(t *testing.T) {
