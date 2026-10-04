@@ -17,6 +17,14 @@ const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
 
+function formatCommand(command: string[]) {
+  return command.map((arg) => JSON.stringify(arg)).join(' ')
+}
+
+function formatValue(value: string) {
+  return JSON.stringify(value)
+}
+
 async function load() {
   loading.value = true
   error.value = ''
@@ -89,6 +97,13 @@ onMounted(load)
 
     <template v-if="request">
       <span class="status">{{ request.status }}</span>
+      <div>
+        <p><strong>Command</strong></p>
+        <pre>{{ formatCommand(request.provenance.command) }}</pre>
+        <p class="muted">
+          Working directory: {{ formatValue(request.provenance.cwd) }}
+        </p>
+      </div>
       <pre>{{ request.prompt }}</pre>
 
       <form v-if="request.status === 'pending'" @submit.prevent="submit">

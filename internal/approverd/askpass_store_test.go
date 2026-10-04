@@ -10,12 +10,19 @@ func TestAskpassStoreCreateCompleteDeliversPassword(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-1" })
 
-	req := store.Create("[sudo] password for alice:")
+	provenance := AskpassProvenance{
+		Command: []string{"/usr/bin/id", "-u"},
+		CWD:     "/home/alice/project",
+	}
+	req := store.Create("[sudo] password for alice:", provenance)
 	if req.ID != "askpass-1" {
 		t.Fatalf("id = %q, want askpass-1", req.ID)
 	}
 	if req.Prompt != "[sudo] password for alice:" {
 		t.Fatalf("prompt = %q", req.Prompt)
+	}
+	if len(req.Provenance.Command) != 2 || req.Provenance.Command[0] != "/usr/bin/id" || req.Provenance.CWD != "/home/alice/project" {
+		t.Fatalf("provenance = %#v", req.Provenance)
 	}
 	if req.Status != AskpassPending {
 		t.Fatalf("status = %q, want %q", req.Status, AskpassPending)
@@ -40,7 +47,7 @@ func TestAskpassStoreCreateCompleteDeliversPassword(t *testing.T) {
 
 func TestAskpassStoreDoesNotExposePasswordInGet(t *testing.T) {
 	store := newAskpassStoreForTest(func() time.Time { return time.Now().UTC() }, func() string { return "askpass-2" })
-	store.Create("Password:")
+	store.Create("Password:", AskpassProvenance{})
 	if _, err := store.Complete("askpass-2", "secret"); err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
@@ -59,7 +66,7 @@ func TestAskpassStoreDoesNotExposePasswordInGet(t *testing.T) {
 
 func TestAskpassStoreDenyDeliversTerminalResult(t *testing.T) {
 	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-deny" })
-	req := store.Create("Password:")
+	req := store.Create("Password:", AskpassProvenance{})
 	result, err := store.Result(req.ID)
 	if err != nil {
 		t.Fatalf("Result() error = %v", err)
@@ -81,7 +88,7 @@ func TestAskpassStoreDenyDeliversTerminalResult(t *testing.T) {
 func TestAskpassStoreExpirePendingDeliversTerminalResult(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	store := newAskpassStoreForTest(func() time.Time { return now }, func() string { return "askpass-expire" })
-	req := store.Create("Password:")
+	req := store.Create("Password:", AskpassProvenance{})
 	result, err := store.Result(req.ID)
 	if err != nil {
 		t.Fatalf("Result() error = %v", err)
@@ -98,7 +105,7 @@ func TestAskpassStoreExpirePendingDeliversTerminalResult(t *testing.T) {
 
 func TestAskpassStoreRejectsRepeatedTerminalActions(t *testing.T) {
 	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-terminal" })
-	store.Create("Password:")
+	store.Create("Password:", AskpassProvenance{})
 	if _, err := store.Deny("askpass-terminal"); err != nil {
 		t.Fatalf("Deny() error = %v", err)
 	}
@@ -120,7 +127,7 @@ func TestAskpassStoreResultMissingRequest(t *testing.T) {
 func TestAskpassStoreActivelyExpiresCompletedMetadata(t *testing.T) {
 	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-active-expire" })
 	store.setExpirationTimeout(20 * time.Millisecond)
-	store.Create("Password:")
+	store.Create("Password:", AskpassProvenance{})
 	if _, err := store.Complete("askpass-active-expire", "secret"); err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
@@ -138,7 +145,7 @@ func TestAskpassStoreActivelyExpiresCompletedMetadata(t *testing.T) {
 func TestAskpassStoreActivelyExpiresPendingRequest(t *testing.T) {
 	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-pending-expire" })
 	store.setExpirationTimeout(20 * time.Millisecond)
-	req := store.Create("Password:")
+	req := store.Create("Password:", AskpassProvenance{})
 	result, err := store.Result(req.ID)
 	if err != nil {
 		t.Fatalf("Result() error = %v", err)
@@ -161,8 +168,8 @@ func TestAskpassStoreListsOnlyPending(t *testing.T) {
 		ids = ids[1:]
 		return id
 	})
-	store.Create("a")
-	store.Create("b")
+	store.Create("a", AskpassProvenance{})
+	store.Create("b", AskpassProvenance{})
 	if _, err := store.Complete("askpass-b", "secret"); err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
@@ -183,11 +190,11 @@ func TestAskpassStoreListPendingNewestFirst(t *testing.T) {
 		return id
 	})
 
-	store.Create("oldest")
+	store.Create("oldest", AskpassProvenance{})
 	now = base.Add(2 * time.Second)
-	store.Create("newest")
+	store.Create("newest", AskpassProvenance{})
 	now = base.Add(time.Second)
-	store.Create("middle")
+	store.Create("middle", AskpassProvenance{})
 
 	pending := store.ListPending()
 	if len(pending) != 3 {

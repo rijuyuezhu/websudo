@@ -1,8 +1,14 @@
 export type AskpassStatus = 'pending' | 'completed' | 'denied' | 'expired'
 
+export interface AskpassProvenance {
+  command: string[]
+  cwd: string
+}
+
 export interface AskpassRequest {
   id: string
   prompt: string
+  provenance: AskpassProvenance
   createdAt: string
   status: AskpassStatus
 }

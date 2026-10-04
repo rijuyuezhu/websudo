@@ -145,3 +145,33 @@ func ProcessUIDs(pid int) (UIDs, error) {
 	}
 	return UIDs{}, errors.New("process uid status is missing")
 }
+
+func CommandLine(pid int) ([]string, error) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil {
+		return nil, fmt.Errorf("inspect process %d command line: %w", pid, err)
+	}
+	return ParseCommandLine(data)
+}
+
+func ParseCommandLine(data []byte) ([]string, error) {
+	parts := strings.Split(string(data), "\x00")
+	if len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	if len(parts) == 0 || parts[0] == "" {
+		return nil, errors.New("process command line is empty")
+	}
+	return parts, nil
+}
+
+func WorkingDirectory(pid int) (string, error) {
+	cwd, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", pid))
+	if err != nil {
+		return "", fmt.Errorf("inspect process %d working directory: %w", pid, err)
+	}
+	if cwd == "" {
+		return "", errors.New("process working directory is empty")
+	}
+	return cwd, nil
+}

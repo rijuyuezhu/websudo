@@ -18,11 +18,17 @@ const (
 	AskpassExpired   AskpassStatus = "expired"
 )
 
+type AskpassProvenance struct {
+	Command []string `json:"command"`
+	CWD     string   `json:"cwd"`
+}
+
 type AskpassRequest struct {
-	ID        string        `json:"id"`
-	Prompt    string        `json:"prompt"`
-	CreatedAt time.Time     `json:"createdAt"`
-	Status    AskpassStatus `json:"status"`
+	ID         string            `json:"id"`
+	Prompt     string            `json:"prompt"`
+	Provenance AskpassProvenance `json:"provenance"`
+	CreatedAt  time.Time         `json:"createdAt"`
+	Status     AskpassStatus     `json:"status"`
 }
 
 type askpassResult struct {
@@ -71,7 +77,7 @@ func (s *AskpassStore) setExpirationTimeout(timeout time.Duration) {
 	}
 }
 
-func (s *AskpassStore) Create(prompt string) AskpassRequest {
+func (s *AskpassStore) Create(prompt string, provenance AskpassProvenance) AskpassRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -83,10 +89,11 @@ func (s *AskpassStore) Create(prompt string) AskpassRequest {
 		id = s.newID()
 	}
 	req := AskpassRequest{
-		ID:        id,
-		Prompt:    prompt,
-		CreatedAt: s.now().UTC(),
-		Status:    AskpassPending,
+		ID:         id,
+		Prompt:     prompt,
+		Provenance: provenance,
+		CreatedAt:  s.now().UTC(),
+		Status:     AskpassPending,
 	}
 	s.items[id] = askpassEntry{
 		request: req,
