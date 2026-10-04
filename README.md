@@ -28,6 +28,30 @@ WEBSUDO_SUDO_PATH=/usr/bin/sudo
 
 The file is the configuration source for these values; per-process environment variables do not override it. Keep the file administrator-controlled. `WEBSUDO_SUDO_PATH` must be an absolute path and may point to any deliberately selected sudo-compatible executable, including sudo-rs.
 
+## User Service
+
+The canonical unit source is `packaging/systemd/websudo-approverd.service`; packages install it as `/usr/lib/systemd/user/websudo-approverd.service` and install this README as `/usr/share/websudo/README.md`. From the normal login session of the desktop user that will use websudo, enable it with:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now websudo-approverd.service
+```
+
+websudo does not require systemd user lingering; the approval daemon is intended to run with the user's login session.
+
+After upgrading websudo, reload the unit and restart the daemon if it is currently running:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user try-restart websudo-approverd.service
+```
+
+Before uninstalling the package, disable the user service from that same session:
+
+```sh
+systemctl --user disable --now websudo-approverd.service
+```
+
 ## Manual Test
 
 1. Install frontend dependencies once with `npm install --prefix web`.

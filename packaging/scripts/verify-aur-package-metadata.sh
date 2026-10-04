@@ -22,9 +22,12 @@ workflow=.github/workflows/ci.yml
 
 require_contains "$pkgbuild_template" 'install=websudo-bin.install' 'AUR install hook reference'
 require_contains "$pkgbuild_template" 'packaging/websudo.env.example' 'environment example install rule'
+require_contains "$pkgbuild_template" '/usr/share/websudo/README.md' 'cross-distro README install rule'
 require_contains "$install_script" 'post_install()' 'post-install hook'
 require_contains "$install_script" 'post_upgrade()' 'post-upgrade hook'
-require_contains "$install_script" 'websudo-systemd-setup' 'systemd setup helper reminder'
+require_contains "$install_script" 'systemctl --user daemon-reload' 'user daemon reload instruction'
+require_contains "$install_script" 'systemctl --user enable --now websudo-approverd.service' 'user service enable instruction'
+require_contains "$install_script" 'systemctl --user try-restart websudo-approverd.service' 'user service upgrade restart instruction'
 require_contains "$workflow" 'packaging/aur/websudo-bin.install' 'AUR install script copy step'
 
 printf '%s\n' 'AUR package metadata verification passed.'

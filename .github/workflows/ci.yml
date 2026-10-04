@@ -145,7 +145,7 @@ jobs:
           set -euo pipefail
           binary_dir="dist/bin-${TARGET}"
           archive_dir="archive/websudo-${TARGET}"
-          mkdir -p "$binary_dir" "$archive_dir/packaging/systemd" "$archive_dir/packaging/scripts"
+          mkdir -p "$binary_dir" "$archive_dir/packaging/systemd"
           for name in websudo websudo-askpass websudo-approverd; do
             GOOS=linux GOARCH="$GOARCH" go build -trimpath -o "$binary_dir/$name" "./cmd/$name"
             cp "$binary_dir/$name" "$archive_dir/$name"
@@ -154,7 +154,6 @@ jobs:
           cp LICENSE "$archive_dir/LICENSE"
           cp packaging/websudo.env.example "$archive_dir/packaging/websudo.env.example"
           cp packaging/systemd/*.service "$archive_dir/packaging/systemd/"
-          cp packaging/scripts/* "$archive_dir/packaging/scripts/"
           tar -czf "dist/websudo-${TARGET}.tar.gz" -C archive "websudo-${TARGET}"
       - name: Verify release binaries
         env:

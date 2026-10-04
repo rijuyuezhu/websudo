@@ -15,6 +15,7 @@ test_uid=${WEBSUDO_TEST_UID:-1001}
 test_user=${WEBSUDO_TEST_USER:-websudo-test}
 user_unit=/usr/lib/systemd/user/websudo-approverd.service
 env_example=/etc/websudo/websudo.env.example
+readme=/usr/share/websudo/README.md
 
 if getent passwd "$test_user" >/dev/null 2>&1; then
 	actual_uid=$(id -u "$test_user")
@@ -40,18 +41,13 @@ check_binary /usr/bin/websudo
 check_binary /usr/bin/websudo-askpass
 check_binary /usr/bin/websudo-approverd
 
-setup=/usr/bin/websudo-systemd-setup
-[ -x "$setup" ] || die "Expected executable not found: $setup"
-setup_output=$(file "$setup")
-case "$setup_output" in
-	*"shell script"*|*"text executable"*) ;;
-	*) die "file output for ${setup} did not describe an executable shell script: ${setup_output}" ;;
-esac
-printf '%s\n' "$setup_output"
-
 [ -f "$user_unit" ] || die "User unit not found: $user_unit"
 [ -f "$env_example" ] || die "Environment example not found: $env_example"
+[ -f "$readme" ] || die "README not found: $readme"
 grep -Fq 'WEBSUDO_WEB_ADDR=127.0.0.1:17878' "$env_example" || die "Environment example missing WEBSUDO_WEB_ADDR default"
+grep -Fq 'systemctl --user enable --now websudo-approverd.service' "$readme" || die "README missing user service setup command"
+grep -Fq 'systemctl --user try-restart websudo-approverd.service' "$readme" || die "README missing user service upgrade command"
+grep -Fq 'systemctl --user disable --now websudo-approverd.service' "$readme" || die "README missing user service uninstall command"
 
 systemd-analyze --user verify "$user_unit"
 
@@ -75,5 +71,6 @@ remove_package
 
 [ ! -e /usr/bin/websudo ] || die 'websudo binary remained after package removal'
 [ ! -e "$user_unit" ] || die "User unit remained after package removal: $user_unit"
+[ ! -e "$readme" ] || die "README remained after package removal: $readme"
 
 printf '%s\n' "Installed package verification passed for ${expected_arch}."
