@@ -21,16 +21,12 @@ func TestDefaultsUseLocalhostAndTenMinuteTimeout(t *testing.T) {
 	if cfg.SudoPath != "/usr/bin/sudo" {
 		t.Fatalf("sudo path = %q, want %q", cfg.SudoPath, "/usr/bin/sudo")
 	}
-	if cfg.AskpassPath != "" {
-		t.Fatalf("askpass path = %q, want empty default for PATH lookup", cfg.AskpassPath)
-	}
 }
 
 func TestDefaultsHonorEnvironmentOverrides(t *testing.T) {
 	t.Setenv("WEBSUDO_WEB_ADDR", "127.0.0.1:19999")
 	t.Setenv("WEBSUDO_APPROVAL_TIMEOUT_SECONDS", "42")
 	t.Setenv("WEBSUDO_SUDO_PATH", "/custom/sudo")
-	t.Setenv("WEBSUDO_ASKPASS_PATH", "/custom/websudo-askpass")
 
 	cfg := Default()
 
@@ -43,14 +39,11 @@ func TestDefaultsHonorEnvironmentOverrides(t *testing.T) {
 	if cfg.SudoPath != "/custom/sudo" {
 		t.Fatalf("sudo path = %q, want %q", cfg.SudoPath, "/custom/sudo")
 	}
-	if cfg.AskpassPath != "/custom/websudo-askpass" {
-		t.Fatalf("askpass path = %q, want %q", cfg.AskpassPath, "/custom/websudo-askpass")
-	}
 }
 
 func TestDefaultsLoadEnvironmentFileOverrides(t *testing.T) {
 	envPath := filepath.Join(t.TempDir(), "websudo.env")
-	if err := os.WriteFile(envPath, []byte(fmt.Sprintf("WEBSUDO_WEB_ADDR=127.0.0.1:19999\nWEBSUDO_APPROVAL_TIMEOUT_SECONDS=12\nWEBSUDO_SUDO_PATH=%s\nWEBSUDO_ASKPASS_PATH=%s\n", "/env/sudo", "/env/websudo-askpass")), 0o600); err != nil {
+	if err := os.WriteFile(envPath, []byte(fmt.Sprintf("WEBSUDO_WEB_ADDR=127.0.0.1:19999\nWEBSUDO_APPROVAL_TIMEOUT_SECONDS=12\nWEBSUDO_SUDO_PATH=%s\n", "/env/sudo")), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
@@ -58,7 +51,6 @@ func TestDefaultsLoadEnvironmentFileOverrides(t *testing.T) {
 	t.Setenv("WEBSUDO_WEB_ADDR", "")
 	t.Setenv("WEBSUDO_APPROVAL_TIMEOUT_SECONDS", "")
 	t.Setenv("WEBSUDO_SUDO_PATH", "")
-	t.Setenv("WEBSUDO_ASKPASS_PATH", "")
 
 	cfg := Default()
 
@@ -70,9 +62,6 @@ func TestDefaultsLoadEnvironmentFileOverrides(t *testing.T) {
 	}
 	if cfg.SudoPath != "/env/sudo" {
 		t.Fatalf("sudo path = %q, want %q", cfg.SudoPath, "/env/sudo")
-	}
-	if cfg.AskpassPath != "/env/websudo-askpass" {
-		t.Fatalf("askpass path = %q, want %q", cfg.AskpassPath, "/env/websudo-askpass")
 	}
 }
 
