@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadUsesDefaultsWhenFileIsMissing(t *testing.T) {
@@ -17,8 +18,8 @@ func TestLoadUsesDefaultsWhenFileIsMissing(t *testing.T) {
 	if cfg.WebAddr != "127.0.0.1:17878" {
 		t.Fatalf("unexpected web addr: %q", cfg.WebAddr)
 	}
-	if cfg.ApprovalTimeoutSeconds != 600 {
-		t.Fatalf("unexpected timeout: %d", cfg.ApprovalTimeoutSeconds)
+	if cfg.ApprovalTimeout != 10*time.Minute {
+		t.Fatalf("unexpected timeout: %v", cfg.ApprovalTimeout)
 	}
 	if cfg.SudoPath != "/usr/bin/sudo" {
 		t.Fatalf("sudo path = %q, want %q", cfg.SudoPath, "/usr/bin/sudo")
@@ -38,8 +39,8 @@ func TestLoadUsesDefaultsInsteadOfCallerEnvironmentWhenFileIsMissing(t *testing.
 	if cfg.WebAddr != "127.0.0.1:17878" {
 		t.Fatalf("web addr = %q, want default", cfg.WebAddr)
 	}
-	if cfg.ApprovalTimeoutSeconds != 600 {
-		t.Fatalf("approval timeout = %d, want default", cfg.ApprovalTimeoutSeconds)
+	if cfg.ApprovalTimeout != 10*time.Minute {
+		t.Fatalf("approval timeout = %v, want default", cfg.ApprovalTimeout)
 	}
 	if cfg.SudoPath != "/usr/bin/sudo" {
 		t.Fatalf("sudo path = %q, want default", cfg.SudoPath)
@@ -63,8 +64,8 @@ func TestLoadUsesConfiguredFileValues(t *testing.T) {
 	if cfg.WebAddr != "127.0.0.1:19999" {
 		t.Fatalf("web addr = %q, want %q", cfg.WebAddr, "127.0.0.1:19999")
 	}
-	if cfg.ApprovalTimeoutSeconds != 12 {
-		t.Fatalf("approval timeout = %d, want %d", cfg.ApprovalTimeoutSeconds, 12)
+	if cfg.ApprovalTimeout != 12*time.Second {
+		t.Fatalf("approval timeout = %v, want %v", cfg.ApprovalTimeout, 12*time.Second)
 	}
 	if cfg.SudoPath != "/usr/bin/sudo-rs" {
 		t.Fatalf("sudo path = %q, want %q", cfg.SudoPath, "/usr/bin/sudo-rs")
@@ -101,26 +102,27 @@ func TestLoadIgnoresCallerEnvironment(t *testing.T) {
 	if cfg.WebAddr != "127.0.0.1:18888" {
 		t.Fatalf("web addr = %q, want trusted file value", cfg.WebAddr)
 	}
-	if cfg.ApprovalTimeoutSeconds != 30 {
-		t.Fatalf("approval timeout = %d, want trusted file value", cfg.ApprovalTimeoutSeconds)
+	if cfg.ApprovalTimeout != 30*time.Second {
+		t.Fatalf("approval timeout = %v, want trusted file value", cfg.ApprovalTimeout)
 	}
 	if cfg.SudoPath != "/usr/local/bin/sudo" {
 		t.Fatalf("sudo path = %q, want trusted file value", cfg.SudoPath)
 	}
 }
 
-func TestLoadIgnoresInvalidTimeout(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "websudo.env")
-	if err := os.WriteFile(path, []byte("WEBSUDO_APPROVAL_TIMEOUT_SECONDS=invalid\n"), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+func TestLoadRejectsInvalidTimeout(t *testing.T) {
+	for _, value := range []string{"0", "-1", "invalid", "", "9223372037"} {
+		t.Run(value, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "websudo.env")
+			if err := os.WriteFile(path, []byte("WEBSUDO_APPROVAL_TIMEOUT_SECONDS="+value+"\n"), 0o600); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
 
-	cfg, err := load(path)
-	if err != nil {
-		t.Fatalf("load() error = %v", err)
-	}
-	if cfg.ApprovalTimeoutSeconds != 600 {
-		t.Fatalf("approval timeout = %d, want default 600", cfg.ApprovalTimeoutSeconds)
+			_, err := load(path)
+			if err == nil || !strings.Contains(err.Error(), "must be a positive integer that fits a duration") {
+				t.Fatalf("load() error = %v, want positive-integer error", err)
+			}
+		})
 	}
 }
 

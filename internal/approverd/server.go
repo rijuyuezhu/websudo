@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"time"
 
 	"websudo/internal/config"
 )
@@ -34,7 +33,7 @@ func NewServer(dep Dependencies) *Server {
 	if askpassStore == nil {
 		askpassStore = NewAskpassStore()
 	}
-	askpassStore.setExpirationTimeout(time.Duration(dep.Config.ApprovalTimeoutSeconds) * time.Second)
+	askpassStore.setExpirationTimeout(dep.Config.ApprovalTimeout)
 	passwordVerifier := dep.PasswordVerifier
 	if passwordVerifier == nil {
 		passwordVerifier = SudoPasswordVerifier{SudoPath: dep.Config.SudoPath}

@@ -26,7 +26,7 @@ WEBSUDO_APPROVAL_TIMEOUT_SECONDS=600
 WEBSUDO_SUDO_PATH=/usr/bin/sudo
 ```
 
-The file is the configuration source for these values; per-process environment variables do not override it. Keep the file administrator-controlled. `WEBSUDO_SUDO_PATH` must be an absolute path and may point to any deliberately selected sudo-compatible executable, including sudo-rs.
+The file is the configuration source for these values; per-process environment variables do not override it. Keep the file administrator-controlled. `WEBSUDO_APPROVAL_TIMEOUT_SECONDS` must be a positive integer. `WEBSUDO_SUDO_PATH` must be an absolute path and may point to any deliberately selected sudo-compatible executable, including sudo-rs.
 
 ## User Service
 

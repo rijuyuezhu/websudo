@@ -24,7 +24,7 @@ func TestAskpassIPCCompletesOverSingleConnection(t *testing.T) {
 
 	store := newAskpassStoreForTest(time.Now, func() string { return "askpass-ipc" })
 	srv := NewServer(Dependencies{
-		Config:       config.Config{ApprovalTimeoutSeconds: 60},
+		Config:       config.Config{ApprovalTimeout: time.Minute},
 		AskpassStore: store,
 	})
 	srv.verifyAskpassPeer = func(net.Conn) (AskpassProvenance, error) {
