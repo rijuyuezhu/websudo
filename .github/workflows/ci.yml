@@ -12,7 +12,6 @@ permissions:
 
 env:
   GO_VERSION: '1.22'
-  NODE_VERSION: '22'
   GOLANGCI_LINT_VERSION: v2.12.2
   NFPM_VERSION: v2.46.3
 
@@ -24,16 +23,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: web/package-lock.json
       - name: Install just
         run: |
           sudo apt-get update
           sudo apt-get install -y just
-      - run: npm ci --prefix web
       - run: just fmt-check
 
   lint:
@@ -43,11 +36,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: web/package-lock.json
       - name: Install just and golangci-lint
         run: |
           sudo apt-get update
@@ -58,7 +46,6 @@ jobs:
           tar -xzf "/tmp/${archive}" -C /tmp
           sudo install -m 0755 "/tmp/golangci-lint-${version}-linux-amd64/golangci-lint" /usr/local/bin/golangci-lint
           golangci-lint --version
-      - run: npm ci --prefix web
       - run: just lint
 
   test:
@@ -68,16 +55,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: web/package-lock.json
       - name: Install just
         run: |
           sudo apt-get update
           sudo apt-get install -y just
-      - run: npm ci --prefix web
       - run: just test
 
   build:
@@ -87,16 +68,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: web/package-lock.json
       - name: Install just
         run: |
           sudo apt-get update
           sudo apt-get install -y just
-      - run: npm ci --prefix web
       - run: just build
 
   artifact-gate:
@@ -158,18 +133,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: web/package-lock.json
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl file just
-      - run: npm ci --prefix web
-      - name: Build frontend
-        run: npm --prefix web run build
+          sudo apt-get install -y curl file
       - name: Build Linux archive
         env:
           GOARCH: ${{ matrix.goarch }}

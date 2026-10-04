@@ -31,6 +31,7 @@ input {
 
 .topbar {
   align-items: center;
+  backdrop-filter: blur(16px);
   background: rgba(255, 255, 255, 0.88);
   border-bottom: 1px solid #d9e0ea;
   display: flex;
@@ -39,7 +40,6 @@ input {
   padding: 0 24px;
   position: sticky;
   top: 0;
-  backdrop-filter: blur(16px);
   z-index: 1;
 }
 
@@ -55,10 +55,6 @@ input {
   margin: 0 auto;
   max-width: 1120px;
   padding: 28px 20px 48px;
-}
-
-.loading {
-  color: #64748b;
 }
 
 .login-wrap {
@@ -178,8 +174,8 @@ button:disabled {
 }
 
 .status {
-  border-radius: 999px;
   background: #e0f2fe;
+  border-radius: 999px;
   color: #075985;
   display: inline-flex;
   font-size: 0.8rem;
@@ -188,7 +184,6 @@ button:disabled {
   text-transform: capitalize;
 }
 
-.command,
 pre {
   background: #0f172a;
   border-radius: 14px;
