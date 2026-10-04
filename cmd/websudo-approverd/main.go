@@ -15,7 +15,10 @@ func main() {
 }
 
 func run() error {
-	cfg := config.Default()
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
 	srv := approverd.NewServer(approverd.Dependencies{Config: cfg})
 	listener, err := approverd.ListenAskpassIPC(config.AskpassSocketPath())
 	if err != nil {

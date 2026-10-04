@@ -16,15 +16,17 @@ If sudo's timestamp cache is fresh, no browser prompt appears. If sudo needs a p
 
 ## Configuration
 
-`websudo-approverd` reads optional configuration from `/etc/websudo/websudo.env`. Packages install an example template at `/etc/websudo/websudo.env.example`.
+All websudo binaries read optional configuration directly from `/etc/websudo/websudo.env`. Packages install an example template at `/etc/websudo/websudo.env.example`.
 
-Supported variables:
+Supported keys:
 
 ```env
 WEBSUDO_WEB_ADDR=127.0.0.1:17878
 WEBSUDO_APPROVAL_TIMEOUT_SECONDS=600
 WEBSUDO_SUDO_PATH=/usr/bin/sudo
 ```
+
+The file is the configuration source for these values; per-process environment variables do not override it. Keep the file administrator-controlled. `WEBSUDO_SUDO_PATH` must be an absolute path and may point to any deliberately selected sudo-compatible executable, including sudo-rs.
 
 ## Manual Test
 

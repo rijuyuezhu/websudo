@@ -2,6 +2,8 @@ package config
 
 import (
 	"bufio"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,41 +16,51 @@ type Config struct {
 	SudoPath               string
 }
 
-func Default() Config {
-	fileEnv := readEnvironmentFile(defaultEnvFilePath())
+const (
+	filePath        = "/etc/websudo/websudo.env"
+	DefaultSudoPath = "/usr/bin/sudo"
+)
 
+func Load() (Config, error) {
+	return load(filePath)
+}
+
+func load(path string) (Config, error) {
+	values, err := readConfigFile(path)
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		WebAddr:                "127.0.0.1:17878",
 		ApprovalTimeoutSeconds: 600,
-		SudoPath:               "/usr/bin/sudo",
+		SudoPath:               DefaultSudoPath,
 	}
-	if value, ok := envString(fileEnv, "WEBSUDO_WEB_ADDR"); ok {
+	if value, ok := configString(values, "WEBSUDO_WEB_ADDR"); ok {
 		cfg.WebAddr = value
 	}
-	if value, ok := envInt(fileEnv, "WEBSUDO_APPROVAL_TIMEOUT_SECONDS"); ok {
+	if value, ok := configInt(values, "WEBSUDO_APPROVAL_TIMEOUT_SECONDS"); ok {
 		cfg.ApprovalTimeoutSeconds = value
 	}
-	if value, ok := envString(fileEnv, "WEBSUDO_SUDO_PATH"); ok {
+	if value, ok := configString(values, "WEBSUDO_SUDO_PATH"); ok {
+		if !filepath.IsAbs(value) {
+			return Config{}, fmt.Errorf("WEBSUDO_SUDO_PATH must be an absolute path: %q", value)
+		}
 		cfg.SudoPath = value
 	}
-	return cfg
-}
-
-func defaultEnvFilePath() string {
-	if value, ok := envString(nil, "WEBSUDO_ENV_FILE"); ok {
-		return value
-	}
-	return "/etc/websudo/websudo.env"
+	return cfg, nil
 }
 
 func AskpassSocketPath() string {
 	return filepath.Join("/run/user", strconv.Itoa(os.Getuid()), "websudo", "askpass.sock")
 }
 
-func readEnvironmentFile(path string) map[string]string {
+func readConfigFile(path string) (map[string]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("open websudo config %s: %w", path, err)
 	}
 	defer func() { _ = file.Close() }()
 
@@ -70,22 +82,22 @@ func readEnvironmentFile(path string) map[string]string {
 		}
 		values[key] = value
 	}
-	return values
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read websudo config %s: %w", path, err)
+	}
+	return values, nil
 }
 
-func envString(fileEnv map[string]string, key string) (string, bool) {
-	value, ok := os.LookupEnv(key)
-	if (!ok || strings.TrimSpace(value) == "") && fileEnv != nil {
-		value, ok = fileEnv[key]
-	}
+func configString(values map[string]string, key string) (string, bool) {
+	value, ok := values[key]
 	if !ok || strings.TrimSpace(value) == "" {
 		return "", false
 	}
 	return value, true
 }
 
-func envInt(fileEnv map[string]string, key string) (int, bool) {
-	value, ok := envString(fileEnv, key)
+func configInt(values map[string]string, key string) (int, bool) {
+	value, ok := configString(values, key)
 	if !ok {
 		return 0, false
 	}

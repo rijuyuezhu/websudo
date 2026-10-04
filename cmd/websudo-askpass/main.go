@@ -17,7 +17,11 @@ func main() {
 		prompt = os.Args[1]
 	}
 
-	cfg := config.Default()
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	baseURL := "http://" + cfg.WebAddr
 	ctx, cancel := context.WithTimeout(context.Background(), approvalTimeout(cfg))
 	defer cancel()

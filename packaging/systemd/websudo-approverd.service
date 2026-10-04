@@ -4,7 +4,6 @@ After=default.target
 
 [Service]
 Type=simple
-EnvironmentFile=-/etc/websudo/websudo.env
 ExecStart=/usr/bin/websudo-approverd
 Restart=on-failure
 
