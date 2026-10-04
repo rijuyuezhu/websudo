@@ -50,7 +50,7 @@ func load(path string) (Config, error) {
 		}
 		cfg.ApprovalTimeout = time.Duration(seconds) * time.Second
 	}
-	if value, ok := configString(values, "WEBSUDO_SUDO_PATH"); ok {
+	if value, ok := values["WEBSUDO_SUDO_PATH"]; ok {
 		if !filepath.IsAbs(value) {
 			return Config{}, fmt.Errorf("WEBSUDO_SUDO_PATH must be an absolute path: %q", value)
 		}
@@ -83,19 +83,19 @@ func readConfigFile(path string) (map[string]string, error) {
 
 	values := make(map[string]string)
 	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
+	for lineNumber := 1; scanner.Scan(); lineNumber++ {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		key, value, ok := strings.Cut(line, "=")
 		if !ok {
-			continue
+			return nil, fmt.Errorf("invalid websudo config line %d: expected KEY=VALUE", lineNumber)
 		}
 		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
-		if key == "" {
-			continue
+		if !knownConfigKey(key) {
+			return nil, fmt.Errorf("unknown websudo config key on line %d: %q", lineNumber, key)
 		}
 		values[key] = value
 	}
@@ -105,10 +105,11 @@ func readConfigFile(path string) (map[string]string, error) {
 	return values, nil
 }
 
-func configString(values map[string]string, key string) (string, bool) {
-	value, ok := values[key]
-	if !ok || strings.TrimSpace(value) == "" {
-		return "", false
+func knownConfigKey(key string) bool {
+	switch key {
+	case "WEBSUDO_WEB_ADDR", "WEBSUDO_APPROVAL_TIMEOUT_SECONDS", "WEBSUDO_SUDO_PATH":
+		return true
+	default:
+		return false
 	}
-	return value, true
 }
