@@ -51,6 +51,44 @@ func TestSessionStoreExpiresSessions(t *testing.T) {
 	}
 }
 
+func TestSessionStoreCreateRemovesOtherExpiredSessions(t *testing.T) {
+	current := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	ids := []string{"session-old", "session-new"}
+	store := newSessionStoreForTest(time.Hour, func() time.Time { return current }, func() (string, error) {
+		id := ids[0]
+		ids = ids[1:]
+		return id, nil
+	})
+
+	if _, _, err := store.Create(); err != nil {
+		t.Fatalf("Create(old) error = %v", err)
+	}
+	current = current.Add(2 * time.Hour)
+	if _, _, err := store.Create(); err != nil {
+		t.Fatalf("Create(new) error = %v", err)
+	}
+	if _, ok := store.sessions["session-old"]; ok {
+		t.Fatal("creating a session should purge unrelated expired sessions")
+	}
+	if !store.Valid("session-new") {
+		t.Fatal("new session should remain valid")
+	}
+}
+
+func TestSessionStoreValidRemovesOtherExpiredSessions(t *testing.T) {
+	current := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	store := newSessionStoreForTest(time.Hour, func() time.Time { return current }, func() (string, error) { return "unused", nil })
+	store.sessions["expired"] = session{expiresAt: current.Add(-time.Second)}
+	store.sessions["active"] = session{expiresAt: current.Add(time.Hour)}
+
+	if !store.Valid("active") {
+		t.Fatal("active session should be valid")
+	}
+	if _, ok := store.sessions["expired"]; ok {
+		t.Fatal("validating a session should purge unrelated expired sessions")
+	}
+}
+
 func TestSessionStoreReturnsIDGenerationError(t *testing.T) {
 	store := newSessionStoreForTest(72*time.Hour, time.Now, func() (string, error) { return "", errors.New("entropy unavailable") })
 

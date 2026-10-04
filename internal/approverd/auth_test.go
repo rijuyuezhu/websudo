@@ -42,8 +42,11 @@ func TestLoginSetsSessionCookie(t *testing.T) {
 
 	srv.Routes().ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNoContent)
+	}
+	if w.Body.Len() != 0 {
+		t.Fatalf("login body = %q, want empty", w.Body.String())
 	}
 	if !verifier.called {
 		t.Fatal("password verifier was not called")
@@ -165,8 +168,11 @@ func TestSessionEndpointReflectsAuthState(t *testing.T) {
 	authReq.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "session-active"})
 	auth := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(auth, authReq)
-	if auth.Code != http.StatusOK {
-		t.Fatalf("auth status = %d, want %d", auth.Code, http.StatusOK)
+	if auth.Code != http.StatusNoContent {
+		t.Fatalf("auth status = %d, want %d", auth.Code, http.StatusNoContent)
+	}
+	if auth.Body.Len() != 0 {
+		t.Fatalf("session body = %q, want empty", auth.Body.String())
 	}
 }
 
@@ -185,8 +191,11 @@ func TestLogoutDeletesSessionAndExpiresCookie(t *testing.T) {
 
 	srv.Routes().ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNoContent)
+	}
+	if w.Body.Len() != 0 {
+		t.Fatalf("logout body = %q, want empty", w.Body.String())
 	}
 	if store.Valid("session-logout") {
 		t.Fatal("logout should delete server-side session")

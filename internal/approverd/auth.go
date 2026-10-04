@@ -95,7 +95,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, sessionCookie(id, expiresAt))
-	writeJSON(w, http.StatusOK, map[string]any{"authenticated": true, "expiresAt": expiresAt})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +111,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"authenticated": true})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +131,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		s.sessions.Delete(cookie.Value)
 	}
 	http.SetCookie(w, expiredSessionCookie())
-	writeJSON(w, http.StatusOK, map[string]bool{"authenticated": false})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) requireSession(w http.ResponseWriter, r *http.Request) bool {

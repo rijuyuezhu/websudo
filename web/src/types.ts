@@ -18,8 +18,3 @@ export interface DashboardResponse {
   askpassPending: AskpassRequest[]
   askpassRecent: AskpassRequest[]
 }
-
-export interface SessionResponse {
-  authenticated: boolean
-  expiresAt?: string
-}

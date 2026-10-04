@@ -1,8 +1,4 @@
-import type {
-  AskpassRequest,
-  DashboardResponse,
-  SessionResponse,
-} from './types'
+import type { AskpassRequest, DashboardResponse } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -32,19 +28,19 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return text ? (JSON.parse(text) as T) : (undefined as T)
 }
 
-export function getSession(): Promise<SessionResponse> {
-  return request<SessionResponse>('/api/session')
+export function getSession(): Promise<void> {
+  return request<void>('/api/session')
 }
 
-export function login(password: string): Promise<SessionResponse> {
-  return request<SessionResponse>('/api/login', {
+export function login(password: string): Promise<void> {
+  return request<void>('/api/login', {
     method: 'POST',
     body: JSON.stringify({ password }),
   })
 }
 
-export function logout(): Promise<SessionResponse> {
-  return request<SessionResponse>('/api/logout', {
+export function logout(): Promise<void> {
+  return request<void>('/api/logout', {
     method: 'POST',
     body: JSON.stringify({}),
   })

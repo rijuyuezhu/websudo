@@ -39,37 +39,38 @@ func (s *SessionStore) Create() (string, time.Time, error) {
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	expiresAt := s.now().UTC().Add(s.ttl)
+	now := s.now().UTC()
+	expiresAt := now.Add(s.ttl)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.deleteExpiredLocked(now)
 	s.sessions[id] = session{expiresAt: expiresAt}
 	return id, expiresAt, nil
 }
 
 func (s *SessionStore) Valid(id string) bool {
-	if id == "" {
-		return false
-	}
 	now := s.now().UTC()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	stored, ok := s.sessions[id]
-	if !ok {
-		return false
-	}
-	if !now.Before(stored.expiresAt) {
-		delete(s.sessions, id)
-		return false
-	}
-	return true
+	s.deleteExpiredLocked(now)
+	_, ok := s.sessions[id]
+	return ok
 }
 
 func (s *SessionStore) Delete(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, id)
+}
+
+func (s *SessionStore) deleteExpiredLocked(now time.Time) {
+	for id, stored := range s.sessions {
+		if !now.Before(stored.expiresAt) {
+			delete(s.sessions, id)
+		}
+	}
 }
 
 func randomSessionID() (string, error) {
