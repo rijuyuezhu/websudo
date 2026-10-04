@@ -203,25 +203,41 @@ function renderAskpass(id) {
   const loading = app.querySelector('.loading')
   const error = app.querySelector('.error')
   const detail = app.querySelector('.detail')
+  let status
+  let timer
+  let loadGeneration = 0
+
+  function schedulePoll() {
+    timer = window.setTimeout(() => void load(), 1000)
+  }
 
   async function load() {
+    window.clearTimeout(timer)
+    timer = undefined
+    const generation = ++loadGeneration
     hideError(error)
     try {
       const item = await request(`/api/askpass/${encodeURIComponent(id)}`)
-      renderDetail(item)
+      if (generation !== loadGeneration) return
+      if (status === undefined || item.status !== status) renderDetail(item)
+      status = item.status
+      if (item.status === 'pending') schedulePoll()
     } catch (err) {
+      if (generation !== loadGeneration) return
       if (err instanceof ApiError && err.status === 401) {
         replace('/login')
         return
       }
-      showError(
-        error,
-        err instanceof ApiError && err.status === 404
-          ? 'Request not found.'
-          : 'Unable to load request.',
-      )
+      if (err instanceof ApiError && err.status === 404) {
+        detail.replaceChildren()
+        detail.hidden = true
+        showError(error, 'Request not found.')
+        return
+      }
+      showError(error, 'Unable to load request.')
+      schedulePoll()
     } finally {
-      loading.hidden = true
+      if (generation === loadGeneration) loading.hidden = true
     }
   }
 
@@ -289,15 +305,14 @@ function renderAskpass(id) {
           replace('/login')
           return
         }
-        showError(
-          error,
-          err instanceof ApiError && err.status === 409
-            ? 'This request is no longer pending.'
-            : 'Unable to submit password.',
-        )
+        if (err instanceof ApiError && err.status === 409) {
+          await load()
+          return
+        }
+        showError(error, 'Unable to submit password.')
       } finally {
         saving = false
-        updateButtons()
+        if (form.isConnected) updateButtons()
       }
     })
 
@@ -318,10 +333,14 @@ function renderAskpass(id) {
           replace('/login')
           return
         }
+        if (err instanceof ApiError && err.status === 409) {
+          await load()
+          return
+        }
         showError(error, 'Unable to deny request.')
       } finally {
         saving = false
-        updateButtons()
+        if (form.isConnected) updateButtons()
       }
     })
   }
