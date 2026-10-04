@@ -38,8 +38,8 @@ async function load() {
     }
     error.value =
       err instanceof ApiError && err.status === 404
-        ? 'Password prompt not found.'
-        : 'Unable to load password prompt.'
+        ? 'Request not found.'
+        : 'Unable to load request.'
   } finally {
     loading.value = false
   }
@@ -60,14 +60,14 @@ async function submit() {
     }
     error.value =
       err instanceof ApiError && err.status === 409
-        ? 'This prompt is no longer pending.'
+        ? 'This request is no longer pending.'
         : 'Unable to submit password.'
   } finally {
     saving.value = false
   }
 }
 
-async function cancel() {
+async function deny() {
   saving.value = true
   error.value = ''
   password.value = ''
@@ -79,7 +79,7 @@ async function cancel() {
       await router.replace('/login')
       return
     }
-    error.value = 'Unable to cancel prompt.'
+    error.value = 'Unable to deny request.'
   } finally {
     saving.value = false
   }
@@ -90,9 +90,8 @@ onMounted(load)
 
 <template>
   <section class="detail-card panel">
-    <p class="eyebrow">Sudo password</p>
-    <h1>Password required</h1>
-    <p v-if="loading" class="muted">Loading prompt...</p>
+    <h1>Sudo request</h1>
+    <p v-if="loading" class="muted">Loading request...</p>
     <p v-if="error" class="notice error">{{ error }}</p>
 
     <template v-if="request">
@@ -121,19 +120,18 @@ onMounted(load)
             type="submit"
             :disabled="saving || password.length === 0"
           >
-            Submit Password
+            Submit password
           </button>
           <button
             class="danger-button"
             type="button"
             :disabled="saving"
-            @click="cancel"
+            @click="deny"
           >
-            Cancel
+            Deny
           </button>
         </div>
       </form>
-      <p v-else class="muted">This password prompt is {{ request.status }}.</p>
     </template>
   </section>
 </template>
