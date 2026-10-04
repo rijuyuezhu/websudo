@@ -32,7 +32,7 @@ verifier_target=/var/tmp/verify-installed-package.sh
 
 case "$distro" in
 	debian)
-		image=${image:-debian:bookworm}
+		image=${image:-debian:trixie}
 		install_cmd='apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y file; set -- /dist/*.deb; [ -e "$1" ] || { printf "%s\n" "No .deb package found in /dist" >&2; exit 1; }; DEBIAN_FRONTEND=noninteractive apt-get install -y "$1"'
 		;;
 	fedora)
