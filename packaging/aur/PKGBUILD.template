@@ -38,8 +38,7 @@ package() {
   install -Dm755 websudo "${pkgdir}/usr/bin/websudo"
   install -Dm755 websudo-askpass "${pkgdir}/usr/bin/websudo-askpass"
   install -Dm755 websudo-approverd "${pkgdir}/usr/bin/websudo-approverd"
-  install -Dm755 packaging/scripts/websudo-systemd-setup "${pkgdir}/usr/bin/websudo-systemd-setup"
   install -Dm644 packaging/systemd/websudo-approverd.service "${pkgdir}/usr/lib/systemd/user/websudo-approverd.service"
-  install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+  install -Dm644 README.md "${pkgdir}/usr/share/websudo/README.md"
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }
