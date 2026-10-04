@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -14,12 +15,12 @@ import (
 )
 
 type Dependencies struct {
-	Config   config.Config
-	Environ  func() []string
-	LookPath func(string) (string, error)
-	Stdin    io.Reader
-	Stdout   io.Writer
-	Stderr   io.Writer
+	Config     config.Config
+	Environ    func() []string
+	Executable func() (string, error)
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Stderr     io.Writer
 }
 
 func Run(ctx context.Context, dep Dependencies, argv []string, cwd string) (int, error) {
@@ -28,11 +29,11 @@ func Run(ctx context.Context, dep Dependencies, argv []string, cwd string) (int,
 		return 0, err
 	}
 	cfg := fillConfig(dep.Config)
-	lookPath := dep.LookPath
-	if lookPath == nil {
-		lookPath = exec.LookPath
+	executable := dep.Executable
+	if executable == nil {
+		executable = os.Executable
 	}
-	askpassPath, err := resolveAskpassPath(cfg.AskpassPath, lookPath)
+	askpassPath, err := resolveAskpassPath(executable)
 	if err != nil {
 		return 0, err
 	}
@@ -86,15 +87,28 @@ func sudoArgs(argv []string) ([]string, error) {
 	return args, nil
 }
 
-func resolveAskpassPath(configured string, lookPath func(string) (string, error)) (string, error) {
-	if strings.TrimSpace(configured) != "" {
-		return configured, nil
-	}
-	path, err := lookPath("websudo-askpass")
+func resolveAskpassPath(executable func() (string, error)) (string, error) {
+	websudoPath, err := executable()
 	if err != nil {
-		return "", fmt.Errorf("resolve websudo-askpass: %w", err)
+		return "", fmt.Errorf("resolve websudo executable: %w", err)
 	}
-	return path, nil
+	websudoPath, err = filepath.EvalSymlinks(websudoPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve websudo executable symlinks: %w", err)
+	}
+	askpassPath := filepath.Join(filepath.Dir(websudoPath), "websudo-askpass")
+	askpassPath, err = filepath.EvalSymlinks(askpassPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve sibling websudo-askpass: %w", err)
+	}
+	info, err := os.Stat(askpassPath)
+	if err != nil {
+		return "", fmt.Errorf("inspect sibling websudo-askpass: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return "", fmt.Errorf("sibling websudo-askpass is not executable: %s", askpassPath)
+	}
+	return askpassPath, nil
 }
 
 func withEnv(env []string, key, value string) []string {

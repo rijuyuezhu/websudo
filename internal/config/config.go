@@ -12,7 +12,6 @@ type Config struct {
 	WebAddr                string
 	ApprovalTimeoutSeconds int
 	SudoPath               string
-	AskpassPath            string
 }
 
 func Default() Config {
@@ -22,7 +21,6 @@ func Default() Config {
 		WebAddr:                "127.0.0.1:17878",
 		ApprovalTimeoutSeconds: 600,
 		SudoPath:               "/usr/bin/sudo",
-		AskpassPath:            "",
 	}
 	if value, ok := envString(fileEnv, "WEBSUDO_WEB_ADDR"); ok {
 		cfg.WebAddr = value
@@ -32,9 +30,6 @@ func Default() Config {
 	}
 	if value, ok := envString(fileEnv, "WEBSUDO_SUDO_PATH"); ok {
 		cfg.SudoPath = value
-	}
-	if value, ok := envString(fileEnv, "WEBSUDO_ASKPASS_PATH"); ok {
-		cfg.AskpassPath = value
 	}
 	return cfg
 }
