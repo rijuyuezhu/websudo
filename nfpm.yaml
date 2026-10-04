@@ -12,9 +12,15 @@ description: Local browser askpass helper for sudo commands.
 vendor: rijuyuezhu
 homepage: https://github.com/rijuyuezhu/websudo
 license: MIT
-depends:
-  - sudo
-  - systemd
+overrides:
+  deb:
+    depends:
+      - systemd
+      - sudo | sudo-rs
+  rpm:
+    depends:
+      - systemd
+      - (sudo or sudo-rs)
 contents:
   - dst: /etc/websudo
     type: dir

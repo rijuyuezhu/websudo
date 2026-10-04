@@ -6,7 +6,9 @@ pkgdesc='Local browser askpass helper for sudo commands.'
 arch=('x86_64' 'aarch64')
 url='https://github.com/rijuyuezhu/websudo'
 license=('MIT')
-depends=('sudo' 'systemd')
+depends=('systemd')
+optdepends=('sudo: default sudo-compatible executable'
+            'sudo-rs: alternative sudo-compatible executable; configure WEBSUDO_SUDO_PATH')
 provides=('websudo')
 conflicts=('websudo')
 install=websudo-bin.install

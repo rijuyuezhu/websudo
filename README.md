@@ -10,9 +10,9 @@ websudo /usr/bin/true
 paru --sudo websudo -Syu
 ```
 
-`websudo` executes commands through the system `sudo` binary using `sudo -A`. Sudo still owns sudoers policy, PAM authentication, timestamp caching, environment handling, and command execution.
+`websudo` executes commands through an explicitly selected sudo-compatible executable using `-A`. The selected implementation still owns sudoers policy, PAM authentication, timestamp caching, environment handling, and command execution. Packages do not force a particular sudo implementation: use traditional sudo or sudo-rs, and set `WEBSUDO_SUDO_PATH` when the executable is not `/usr/bin/sudo`.
 
-If sudo's timestamp cache is fresh, no browser prompt appears. If sudo needs a password, it invokes `websudo-askpass`; the helper creates a local browser prompt through `websudo-approverd` and prints the submitted password back to sudo for PAM validation.
+If the selected implementation's timestamp cache is fresh, no browser prompt appears. If it needs a password, it invokes `websudo-askpass`; the helper creates a local browser prompt through `websudo-approverd` and prints the submitted password back for PAM validation.
 
 ## Configuration
 
@@ -60,5 +60,5 @@ systemctl --user disable --now websudo-approverd.service
 4. Open `http://127.0.0.1:17878`.
 5. Log in with the current machine password. The browser session lasts up to 72 hours or until logout.
 6. Run `build/websudo -v` or `build/websudo /usr/bin/true` in a terminal. `websudo` uses the `websudo-askpass` binary built alongside it.
-7. If sudo needs a password, approve the prompt in the web UI and submit the sudo password.
+7. If the selected sudo-compatible executable needs a password, approve the prompt in the web UI and submit it.
 8. Use `Logout` in the web UI to clear the browser session.
