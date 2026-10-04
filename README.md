@@ -1,24 +1,57 @@
 # websudo
 
-Local browser askpass helper for sudo commands.
+websudo is a Linux sudo wrapper that moves password prompts from the terminal to a local web page. Release packages are available for x86_64 and ARM64.
 
-## Commands
+websudo still uses your configured sudo program, so existing sudoers rules and credential caching continue to apply. If sudo already has a valid cached credential, no browser prompt is shown.
+
+## Install
+
+### Arch Linux
+
+Install the AUR package:
+
+```sh
+paru -S websudo-bin
+```
+
+### Debian / Ubuntu / Fedora
+
+Download the matching `.deb` or `.rpm` from [GitHub Releases](https://github.com/rijuyuezhu/websudo/releases) and install it with your system package manager.
+
+### Enable the approval service
+
+Run this from the normal desktop login session of the user who will use websudo:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now websudo-approverd.service
+```
+
+The approval page is available at `http://127.0.0.1:17878` by default.
+
+## Use
+
+Run commands through websudo the same way you would invoke a sudo wrapper:
 
 ```sh
 websudo -v
 websudo /usr/bin/true
+websudo pacman -Syu
+```
+
+For paru:
+
+```sh
 paru --sudo websudo -Syu
 ```
 
-`websudo` executes commands through an explicitly selected sudo-compatible executable using `-A`. The selected implementation still owns sudoers policy, PAM authentication, timestamp caching, environment handling, and command execution. Packages do not force a particular sudo implementation: use traditional sudo or sudo-rs, and set `WEBSUDO_SUDO_PATH` when the executable is not `/usr/bin/sudo`.
+When sudo needs a password, open the approval page, sign in with your machine password, review the command and working directory, and submit the password. The browser session lasts up to 72 hours or until you choose **Logout**.
 
-If the selected implementation's timestamp cache is fresh, no browser prompt appears. If it needs a password, it invokes `websudo-askpass`; the helper creates a local browser prompt through `websudo-approverd` and prints the submitted password back for PAM validation.
+websudo works with traditional sudo by default. To use sudo-rs or another deliberately selected sudo-compatible executable, configure `WEBSUDO_SUDO_PATH` as described below.
 
-## Configuration
+## Configure
 
-All websudo binaries read optional configuration directly from `/etc/websudo/websudo.env`. Packages install an example template at `/etc/websudo/websudo.env.example`.
-
-Supported keys:
+Configuration is optional. If `/etc/websudo/websudo.env` does not exist, websudo uses these defaults:
 
 ```env
 WEBSUDO_WEB_ADDR=127.0.0.1:17878
@@ -26,42 +59,50 @@ WEBSUDO_APPROVAL_TIMEOUT_SECONDS=600
 WEBSUDO_SUDO_PATH=/usr/bin/sudo
 ```
 
-The file is the configuration source for these values; per-process environment variables do not override it. Keep the file administrator-controlled. `WEBSUDO_WEB_ADDR` must use an explicit numeric loopback IP (for example `127.0.0.1` or `[::1]`) and a non-zero port; hostnames and non-loopback addresses are rejected. `WEBSUDO_APPROVAL_TIMEOUT_SECONDS` must be a positive integer. `WEBSUDO_SUDO_PATH` must be an absolute path and may point to any deliberately selected sudo-compatible executable, including sudo-rs.
+Packages also install an example file at `/etc/websudo/websudo.env.example`.
 
-## User Service
+Only these three keys are accepted:
 
-The canonical unit source is `packaging/systemd/websudo-approverd.service`; packages install it as `/usr/lib/systemd/user/websudo-approverd.service` and install this README as `/usr/share/websudo/README.md`. From the normal login session of the desktop user that will use websudo, enable it with:
+- `WEBSUDO_WEB_ADDR` — numeric loopback address and non-zero port, such as `127.0.0.1:17878` or `[::1]:17878`.
+- `WEBSUDO_APPROVAL_TIMEOUT_SECONDS` — positive integer number of seconds before an unanswered request expires.
+- `WEBSUDO_SUDO_PATH` — absolute path to the sudo-compatible executable, for example `/usr/bin/sudo-rs`.
+
+Keep `/etc/websudo/websudo.env` administrator-controlled. Unknown keys, malformed lines, and invalid values cause websudo to reject the configuration instead of silently falling back.
+
+websudo itself only listens on loopback. If you expose the approval page through your own proxy, VPN, or Tailscale setup, keep the websudo backend on a loopback address; that external proxy setup is outside websudo.
+
+After changing the configuration, restart the approval service:
 
 ```sh
-systemctl --user daemon-reload
-systemctl --user enable --now websudo-approverd.service
+systemctl --user restart websudo-approverd.service
 ```
 
-websudo does not require systemd user lingering; the approval daemon is intended to run with the user's login session.
+## Upgrade
 
-After upgrading websudo, reload the unit and restart the daemon if it is currently running:
+After upgrading the package, reload the user unit and restart the daemon if it is running:
 
 ```sh
 systemctl --user daemon-reload
 systemctl --user try-restart websudo-approverd.service
 ```
 
-Before uninstalling the package, disable the user service from that same session:
+## Uninstall
+
+Before removing the package, disable the user service from the same desktop login session:
 
 ```sh
 systemctl --user disable --now websudo-approverd.service
 ```
 
-## Frontend
+Then remove the package with your normal package manager.
 
-The three-view approval UI is embedded directly from `internal/approverd/static/app/` (`index.html`, `styles.css`, and `app.js`). There is no separate frontend build step or Node dependency. Browser sessions are stored by the exact websudo origin and sent as bearer authorization rather than a host-scoped HTTP cookie.
+## Build from source
 
-## Manual Test
+For development or manual testing, install Go 1.27+ and `just`, then run:
 
-1. Build the project with `just build`.
-2. Start `build/websudo-approverd` as your user.
-3. Open `http://127.0.0.1:17878`.
-4. Log in with the current machine password. The browser session lasts up to 72 hours or until logout.
-5. Run `build/websudo -v` or `build/websudo /usr/bin/true` in a terminal. `websudo` uses the `websudo-askpass` binary built alongside it.
-6. If the selected sudo-compatible executable needs a password, approve the prompt in the web UI and submit it.
-7. Use `Logout` in the web UI to clear the browser session.
+```sh
+just build
+build/websudo-approverd
+```
+
+Open `http://127.0.0.1:17878`, then use `build/websudo` from another terminal. For normal use, prefer an installed package.
