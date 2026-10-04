@@ -10,11 +10,13 @@ export interface AskpassRequest {
   prompt: string
   provenance: AskpassProvenance
   createdAt: string
+  finishedAt?: string
   status: AskpassStatus
 }
 
 export interface DashboardResponse {
   askpassPending: AskpassRequest[]
+  askpassRecent: AskpassRequest[]
 }
 
 export interface SessionResponse {

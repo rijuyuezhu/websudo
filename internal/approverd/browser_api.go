@@ -4,6 +4,7 @@ import "net/http"
 
 type dashboardResponse struct {
 	AskpassPending []AskpassRequest `json:"askpassPending"`
+	AskpassRecent  []AskpassRequest `json:"askpassRecent"`
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -21,5 +22,6 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, dashboardResponse{
 		AskpassPending: s.askpassStore.ListPending(),
+		AskpassRecent:  s.askpassStore.ListRecent(),
 	})
 }
