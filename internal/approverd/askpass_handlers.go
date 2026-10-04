@@ -2,49 +2,10 @@ package approverd
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
 )
-
-const askpassConsumeTokenHeader = "X-Websudo-Askpass-Token"
-
-type askpassCreateResponse struct {
-	AskpassRequest
-	ConsumeToken string `json:"consumeToken"`
-}
-
-func (s *Server) handleAskpassCreate(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/api/askpass" {
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	if s.askpassStore == nil {
-		http.Error(w, "askpass store not configured", http.StatusInternalServerError)
-		return
-	}
-
-	var body struct {
-		Prompt string `json:"prompt"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	req := s.askpassStore.Create(body.Prompt)
-	consumeToken, err := s.askpassStore.ConsumeToken(req.ID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, http.StatusCreated, askpassCreateResponse{AskpassRequest: req, ConsumeToken: consumeToken})
-}
 
 func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
 	if s.askpassStore == nil {
@@ -81,14 +42,8 @@ func (s *Server) handleAskpassAction(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-
-	if action == "consume" {
-		password, err := s.askpassStore.Consume(id, r.Header.Get(askpassConsumeTokenHeader))
-		if err != nil {
-			w.WriteHeader(askpassConsumeStatus(err))
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"password": password})
+	if action != "complete" && action != "deny" {
+		http.NotFound(w, r)
 		return
 	}
 
@@ -157,22 +112,6 @@ func askpassWriteStatus(err error) int {
 		return http.StatusNotFound
 	}
 	return http.StatusConflict
-}
-
-func askpassConsumeStatus(err error) int {
-	message := err.Error()
-	switch {
-	case errors.Is(err, errInvalidAskpassConsumeToken):
-		return http.StatusForbidden
-	case strings.Contains(message, "not found"):
-		return http.StatusNotFound
-	case strings.Contains(message, string(AskpassPending)):
-		return http.StatusConflict
-	case strings.Contains(message, string(AskpassDenied)), strings.Contains(message, string(AskpassExpired)):
-		return http.StatusGone
-	default:
-		return http.StatusConflict
-	}
 }
 
 func (s *Server) expireAskpassRequests() {

@@ -75,3 +75,10 @@ func TestDefaultsLoadEnvironmentFileOverrides(t *testing.T) {
 		t.Fatalf("askpass path = %q, want %q", cfg.AskpassPath, "/env/websudo-askpass")
 	}
 }
+
+func TestAskpassSocketPathUsesRunUser(t *testing.T) {
+	want := filepath.Join("/run/user", fmt.Sprint(os.Getuid()), "websudo", "askpass.sock")
+	if got := AskpassSocketPath(); got != want {
+		t.Fatalf("AskpassSocketPath() = %q, want %q", got, want)
+	}
+}

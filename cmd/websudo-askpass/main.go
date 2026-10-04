@@ -22,7 +22,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), approvalTimeout(cfg))
 	defer cancel()
 
-	client := askpass.New(baseURL, nil)
+	client := askpass.New(config.AskpassSocketPath())
 	req, err := client.Create(ctx, prompt)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

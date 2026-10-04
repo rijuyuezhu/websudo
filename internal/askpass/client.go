@@ -1,134 +1,110 @@
 package askpass
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
-	"strings"
-	"time"
+	"net"
 )
 
-const consumeTokenHeader = "X-Websudo-Askpass-Token"
-
-var errPending = errors.New("askpass request pending")
-
 type Request struct {
-	ID           string    `json:"id"`
-	Prompt       string    `json:"prompt"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"createdAt"`
-	ConsumeToken string    `json:"consumeToken"`
+	ID      string
+	conn    net.Conn
+	decoder *json.Decoder
+}
+
+type IPCRequest struct {
+	Prompt string `json:"prompt"`
+}
+
+type IPCCreated struct {
+	ID string `json:"id"`
+}
+
+type IPCResult struct {
+	Password string `json:"password,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 type Client struct {
-	baseURL      string
-	httpClient   *http.Client
-	pollInterval time.Duration
+	socketPath string
 }
 
-func New(baseURL string, httpClient *http.Client) *Client {
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 10 * time.Second}
-	}
-	return &Client{
-		baseURL:      strings.TrimRight(baseURL, "/"),
-		httpClient:   httpClient,
-		pollInterval: 250 * time.Millisecond,
-	}
+func New(socketPath string) *Client {
+	return &Client{socketPath: socketPath}
 }
 
 func (c *Client) Create(ctx context.Context, prompt string) (Request, error) {
-	body, err := json.Marshal(struct {
-		Prompt string `json:"prompt"`
-	}{Prompt: prompt})
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", c.socketPath)
 	if err != nil {
-		return Request{}, err
+		return Request{}, fmt.Errorf("connect to websudo approval daemon: %w", err)
+	}
+	closeConn := true
+	defer func() {
+		if closeConn {
+			_ = conn.Close()
+		}
+	}()
+
+	stop := closeOnContext(ctx, conn)
+	defer func() { _ = stop() }()
+
+	if err := json.NewEncoder(conn).Encode(IPCRequest{Prompt: prompt}); err != nil {
+		return Request{}, fmt.Errorf("send askpass request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/askpass", bytes.NewReader(body))
-	if err != nil {
-		return Request{}, err
+	decoder := json.NewDecoder(conn)
+	var created IPCCreated
+	if err := decoder.Decode(&created); err != nil {
+		if ctx.Err() != nil {
+			return Request{}, ctx.Err()
+		}
+		return Request{}, fmt.Errorf("receive askpass request id: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	if created.ID == "" {
+		return Request{}, errors.New("askpass request missing id")
+	}
+	if !stop() {
+		if err := ctx.Err(); err != nil {
+			return Request{}, err
+		}
+	}
 
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return Request{}, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusCreated {
-		return Request{}, fmt.Errorf("create askpass request failed: %s", resp.Status)
-	}
-
-	var req Request
-	if err := json.NewDecoder(resp.Body).Decode(&req); err != nil {
-		return Request{}, err
-	}
-	if req.ID == "" {
-		return Request{}, errors.New("create askpass request missing id")
-	}
-	if req.ConsumeToken == "" {
-		return Request{}, errors.New("create askpass request missing consume token")
-	}
-	return req, nil
+	closeConn = false
+	return Request{ID: created.ID, conn: conn, decoder: decoder}, nil
 }
 
 func (c *Client) WaitForPassword(ctx context.Context, req Request) (string, error) {
 	if req.ID == "" {
 		return "", errors.New("askpass request missing id")
 	}
-	if req.ConsumeToken == "" {
-		return "", errors.New("askpass request missing consume token")
+	if req.conn == nil || req.decoder == nil {
+		return "", errors.New("askpass request has no active connection")
 	}
+	defer func() { _ = req.conn.Close() }()
 
-	for {
-		password, err := c.consume(ctx, req)
-		if err == nil {
-			return password, nil
-		}
-		if !errors.Is(err, errPending) {
-			return "", err
-		}
+	stop := closeOnContext(ctx, req.conn)
+	defer func() { _ = stop() }()
 
-		select {
-		case <-ctx.Done():
+	var result IPCResult
+	if err := req.decoder.Decode(&result); err != nil {
+		if ctx.Err() != nil {
 			return "", ctx.Err()
-		case <-time.After(c.pollInterval):
 		}
+		return "", fmt.Errorf("receive askpass result: %w", err)
 	}
+	if result.Error != "" {
+		return "", errors.New(result.Error)
+	}
+	return result.Password, nil
 }
 
-func (c *Client) consume(ctx context.Context, req Request) (string, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/askpass/"+url.PathEscape(req.ID)+"/consume", nil)
-	if err != nil {
-		return "", err
+func closeOnContext(ctx context.Context, conn net.Conn) func() bool {
+	if ctx.Done() == nil {
+		return func() bool { return true }
 	}
-	httpReq.Header.Set(consumeTokenHeader, req.ConsumeToken)
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var body struct {
-			Password string `json:"password"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-			return "", err
-		}
-		return body.Password, nil
-	case http.StatusConflict:
-		return "", errPending
-	case http.StatusGone, http.StatusForbidden, http.StatusNotFound:
-		return "", fmt.Errorf("consume askpass request failed: %s", resp.Status)
-	default:
-		return "", fmt.Errorf("consume askpass request failed: %s", resp.Status)
-	}
+	return context.AfterFunc(ctx, func() {
+		_ = conn.Close()
+	})
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -43,6 +44,10 @@ func defaultEnvFilePath() string {
 		return value
 	}
 	return "/etc/websudo/websudo.env"
+}
+
+func AskpassSocketPath() string {
+	return filepath.Join("/run/user", strconv.Itoa(os.Getuid()), "websudo", "askpass.sock")
 }
 
 func readEnvironmentFile(path string) map[string]string {

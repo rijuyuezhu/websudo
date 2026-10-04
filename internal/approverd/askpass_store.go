@@ -2,10 +2,8 @@ package approverd
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -20,8 +18,6 @@ const (
 	AskpassExpired   AskpassStatus = "expired"
 )
 
-var errInvalidAskpassConsumeToken = errors.New("invalid askpass consume token")
-
 type AskpassRequest struct {
 	ID        string        `json:"id"`
 	Prompt    string        `json:"prompt"`
@@ -29,17 +25,20 @@ type AskpassRequest struct {
 	Status    AskpassStatus `json:"status"`
 }
 
+type askpassResult struct {
+	status   AskpassStatus
+	password string
+}
+
 type askpassEntry struct {
-	request      AskpassRequest
-	consumeToken string
-	password     string
+	request AskpassRequest
+	result  chan askpassResult
 }
 
 type AskpassStore struct {
 	mu                sync.Mutex
 	now               func() time.Time
 	newID             func() string
-	newToken          func() string
 	expirationTimeout time.Duration
 	items             map[string]askpassEntry
 	order             []string
@@ -51,10 +50,9 @@ func NewAskpassStore() *AskpassStore {
 
 func newAskpassStoreForTest(now func() time.Time, newID func() string) *AskpassStore {
 	return &AskpassStore{
-		now:      now,
-		newID:    newID,
-		newToken: randomAskpassToken,
-		items:    make(map[string]askpassEntry),
+		now:   now,
+		newID: newID,
+		items: make(map[string]askpassEntry),
 	}
 }
 
@@ -67,7 +65,7 @@ func (s *AskpassStore) setExpirationTimeout(timeout time.Duration) {
 		return
 	}
 	for _, entry := range s.items {
-		if entry.request.Status == AskpassCompleted {
+		if entry.request.Status == AskpassPending || entry.request.Status == AskpassCompleted {
 			s.scheduleExpirationLocked(entry.request)
 		}
 	}
@@ -90,20 +88,24 @@ func (s *AskpassStore) Create(prompt string) AskpassRequest {
 		CreatedAt: s.now().UTC(),
 		Status:    AskpassPending,
 	}
-	s.items[id] = askpassEntry{request: req, consumeToken: s.newToken()}
+	s.items[id] = askpassEntry{
+		request: req,
+		result:  make(chan askpassResult, 1),
+	}
 	s.order = append(s.order, id)
+	s.scheduleExpirationLocked(req)
 	return req
 }
 
-func (s *AskpassStore) ConsumeToken(id string) (string, error) {
+func (s *AskpassStore) Result(id string) (<-chan askpassResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	entry, ok := s.items[id]
 	if !ok {
-		return "", errors.New("askpass request not found")
+		return nil, errors.New("askpass request not found")
 	}
-	return entry.consumeToken, nil
+	return entry.result, nil
 }
 
 func (s *AskpassStore) Get(id string) (AskpassRequest, error) {
@@ -147,9 +149,8 @@ func (s *AskpassStore) Complete(id, password string) (AskpassRequest, error) {
 		return AskpassRequest{}, errors.New("askpass request is not pending")
 	}
 	entry.request.Status = AskpassCompleted
-	entry.password = password
 	s.items[id] = entry
-	s.scheduleExpirationLocked(entry.request)
+	entry.result <- askpassResult{status: AskpassCompleted, password: password}
 	entry = s.items[id]
 	return entry.request, nil
 }
@@ -167,31 +168,8 @@ func (s *AskpassStore) Deny(id string) (AskpassRequest, error) {
 	}
 	entry.request.Status = AskpassDenied
 	s.items[id] = entry
+	entry.result <- askpassResult{status: AskpassDenied}
 	return entry.request, nil
-}
-
-func (s *AskpassStore) Consume(id, consumeToken string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	entry, ok := s.items[id]
-	if !ok {
-		return "", errors.New("askpass request not found")
-	}
-	if subtle.ConstantTimeCompare([]byte(consumeToken), []byte(entry.consumeToken)) != 1 {
-		return "", errInvalidAskpassConsumeToken
-	}
-	if entry.request.Status != AskpassCompleted {
-		return "", fmt.Errorf("askpass request is %s", entry.request.Status)
-	}
-	delete(s.items, id)
-	for i, orderedID := range s.order {
-		if orderedID == id {
-			s.order = append(s.order[:i], s.order[i+1:]...)
-			break
-		}
-	}
-	return entry.password, nil
 }
 
 func (s *AskpassStore) ExpireBefore(cutoff time.Time) int {
@@ -207,9 +185,12 @@ func (s *AskpassStore) ExpireBefore(cutoff time.Time) int {
 		if entry.request.Status != AskpassPending && entry.request.Status != AskpassCompleted {
 			continue
 		}
+		wasPending := entry.request.Status == AskpassPending
 		entry.request.Status = AskpassExpired
-		entry.password = ""
 		s.items[id] = entry
+		if wasPending {
+			entry.result <- askpassResult{status: AskpassExpired}
+		}
 		expired++
 	}
 	return expired
@@ -222,24 +203,30 @@ func (s *AskpassStore) scheduleExpirationLocked(req AskpassRequest) {
 	}
 	delay := req.CreatedAt.Add(timeout).Sub(s.now().UTC())
 	if delay <= 0 {
-		s.expireCompletedLocked(req.ID, req.CreatedAt)
+		s.expireLocked(req.ID, req.CreatedAt)
 		return
 	}
 	time.AfterFunc(delay, func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		s.expireCompletedLocked(req.ID, req.CreatedAt)
+		s.expireLocked(req.ID, req.CreatedAt)
 	})
 }
 
-func (s *AskpassStore) expireCompletedLocked(id string, createdAt time.Time) bool {
+func (s *AskpassStore) expireLocked(id string, createdAt time.Time) bool {
 	entry, ok := s.items[id]
-	if !ok || entry.request.Status != AskpassCompleted || !entry.request.CreatedAt.Equal(createdAt) {
+	if !ok || !entry.request.CreatedAt.Equal(createdAt) {
 		return false
 	}
+	if entry.request.Status != AskpassPending && entry.request.Status != AskpassCompleted {
+		return false
+	}
+	wasPending := entry.request.Status == AskpassPending
 	entry.request.Status = AskpassExpired
-	entry.password = ""
 	s.items[id] = entry
+	if wasPending {
+		entry.result <- askpassResult{status: AskpassExpired}
+	}
 	return true
 }
 
@@ -249,12 +236,4 @@ func randomAskpassID() string {
 		panic(err)
 	}
 	return "askpass-" + hex.EncodeToString(b[:])
-}
-
-func randomAskpassToken() string {
-	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b[:])
 }
